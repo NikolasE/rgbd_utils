@@ -1,0 +1,23 @@
+<package>
+  <description brief="rgbd_utils">
+
+     rgbd_utils
+
+  </description>
+  <author>Nikolas Engelhard</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/rgbd_utils</url>
+  
+  <depend package="roscpp"/>
+  <depend package="sensor_msgs"/>
+  <depend package="pcl_ros"/>
+<depend package="opencv2"/>
+
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-L${prefix}/lib -lros"/>
+  </export>
+
+</package>
+
+
