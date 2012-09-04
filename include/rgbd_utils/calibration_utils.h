@@ -8,9 +8,16 @@
 #ifndef CALIBRATION_H_
 #define CALIBRATION_H_
 
-#include "type_definitions.h"
+#include "rgbd_utils/type_definitions.h"
 #include <opencv/cv.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
 #include <pcl/common/transform.h>
+
+
+
+Cloud applyMask(const Cloud& current, const cv::Mat& mask);
 
 
 Cloud computeMean(const std::vector<Cloud>& clouds);
@@ -24,6 +31,12 @@ Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std:
 
 void add(pcl_Point& a,const pcl_Point& b);
 void div(pcl_Point& a, float d);
+pcl_Point sub(const pcl_Point& a,const pcl_Point& b);
+float dist(const pcl_Point& a,const pcl_Point& b);
+
+float dist_sq(const pcl_Point& a,const pcl_Point& b);
+
+
 float norm(const pcl_Point& p);
 pcl_Point setLength(const pcl_Point& p, float s);
 
@@ -34,9 +47,13 @@ void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direct
 
 void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out);
 
-float dist(pcl_Point A, pcl_Point B);
 
-void projectCloudIntoProjector(const Cloud& cloud, const cv::Mat& P, cv::Mat& img);
+
+void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height = 0.1);
+
+void foo();
+
+Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height);
 
 
 bool loadMat(const std::string path, const std::string filename, cv::Mat& mat);

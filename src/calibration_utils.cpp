@@ -13,6 +13,12 @@
 using namespace std;
 
 
+pcl_Point sub(const pcl_Point& a,const pcl_Point& b){
+ pcl_Point m;
+ m.x = a.x-b.x; m.y = a.y-b.y; m.z = a.z-b.z;
+ return m;
+}
+
 void add(pcl_Point& a,const pcl_Point& b){
  a.x+=b.x; a.y+=b.y; a.z += b.z;
 }
@@ -24,6 +30,16 @@ void div(pcl_Point& a, float d){
 
 float norm(const pcl_Point& p){
  return sqrt(p.x*p.x+p.y*p.y+p.z*p.z);
+}
+
+
+float dist_sq(const pcl_Point& a,const pcl_Point& b){
+ return pow((a.x-b.x),2)+pow((a.y-b.y),2)+pow((a.z-b.z),2);
+}
+
+
+float dist(const pcl_Point& a,const pcl_Point& b){
+ return norm(sub(a,b));
 }
 
 
@@ -46,29 +62,65 @@ pcl_Point setLength(const pcl_Point& p, float s){
 }
 
 
+Cloud applyMask(const Cloud& current, const cv::Mat& mask){
+
+ //cout << "foo" << endl;
+ if (uint(mask.cols) != current.width){
+  ROS_INFO("mask: %i, current: %i", mask.cols, current.width);
+  return current;
+ }
+ // cout << "bar" << endl;
+ Cloud result = current;
+ result.reserve(current.size());
+
+ pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
+
+ // cout << "div" << endl;
+
+ assert(nap.x != nap.x);
+ // cout << "dd" << endl;
+
+ int invalid = 0;
+
+ for (uint x=0; x<current.width; ++x)
+  for (uint y=0; y<current.height; ++y){
+   //   cout << x << " " << y << endl;
+   if (mask.at<uchar>(y,x) != 255){
+    invalid++;
+    //    cout << "invalid" << endl;
+    result.at(x,y) = nap;
+   }
+  }
+
+ ROS_INFO("removed %i points", invalid);
+
+ return result;
+
+}
+
 
 Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std::vector<cv::Point2i>* valids){
 
  Cloud result;
  assert(cloud.size() == reference.size());
 
-// for (uint i=0; i<cloud.size(); ++i){
+ // for (uint i=0; i<cloud.size(); ++i){
 
  for (uint x=0; x<cloud.width; ++x)
   for (uint y=0; y<cloud.height; ++y){
 
-  pcl_Point c = cloud.at(x,y);
-  pcl_Point r = reference.at(x,y);
+   pcl_Point c = cloud.at(x,y);
+   pcl_Point r = reference.at(x,y);
 
-  if (c.x != c.x) continue;
+   if (c.x != c.x) continue;
 
-  if (((r.x != r.x) || norm(c) < norm(r) - max_dist)){
-   result.push_back(c);
+   if (((r.x != r.x) || norm(c) < norm(r) - max_dist)){
+    result.push_back(c);
 
-   if (valids) valids->push_back(cv::Point2i(x,y));
+    if (valids) valids->push_back(cv::Point2i(x,y));
+   }
+
   }
-
- }
 
  return result;
 
@@ -87,9 +139,9 @@ Cloud computeMean(const std::vector<Cloud>& clouds){
  // ROS_INFO("W.H: %i %i", out.width, out.height);
 
  for (uint i=0; i<clouds.size(); ++i){
-//  assert(clouds[i].is_dense);
+  //  assert(clouds[i].is_dense);
   assert(clouds[i].width == out.width && clouds[i].height == out.height);
-//  ROS_INFO("CLoud %i: w: %i, h: %i, s: %i", i, clouds[i].width, clouds[i].height, clouds[i].size());
+  //  ROS_INFO("CLoud %i: w: %i, h: %i, s: %i", i, clouds[i].width, clouds[i].height, clouds[i].size());
 
  }
 
@@ -103,34 +155,34 @@ Cloud computeMean(const std::vector<Cloud>& clouds){
    pcl_Point mean; mean.x = mean.y = mean.z = 0;
    int cnt = 0;// number of clouds that have a measurement at this position
 
-//   ROS_INFO("%i %i", x,y);
+   //   ROS_INFO("%i %i", x,y);
 
 
    for (uint i=0; i<clouds.size(); ++i){
-//    cout << "i" << i << endl;
-     pcl_Point p = clouds[i].at(x,y);
-//     cout << "b" << endl;
-     if (p.x != p.x) continue; // NaN value
-     add(mean, p);
-     cnt++;
+    //    cout << "i" << i << endl;
+    pcl_Point p = clouds[i].at(x,y);
+    //     cout << "b" << endl;
+    if (p.x != p.x) continue; // NaN value
+    add(mean, p);
+    cnt++;
    }
 
 
    if (cnt == 0){
-//    cout << "nan" << endl;
+    //    cout << "nan" << endl;
     out.at(x,y) = clouds[0](x,y); // copy a nan-point at this position
    }else{
 
     div(mean,cnt);
-//    cout << "mean n=" << cnt << endl;
+    //    cout << "mean n=" << cnt << endl;
     out.at(x,y) = mean;
-//    cout << "out" << cnt << endl;
+    //    cout << "out" << cnt << endl;
     total_valid++;
    }
   }
 
 
-// ROS_INFO("Computed mean of %zu cloud, resulting cloud has %i valid points",clouds.size(),total_valid);
+ // ROS_INFO("Computed mean of %zu cloud, resulting cloud has %i valid points",clouds.size(),total_valid);
 
  return out;
 
@@ -207,11 +259,6 @@ bool saveMat(const string path, const string name, const cv::Mat& mat){
  fs << name << mat;
  fs.release();
  return true;
-}
-
-
-float dist(pcl_Point A, pcl_Point B){
- return sqrt(pow(A.x-B.x,2)+pow(A.y-B.y,2)+pow(A.z-B.z,2));
 }
 
 
@@ -337,7 +384,7 @@ bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved
 
 
 
- cout << "M " << endl << M << endl;
+ // cout << "M " << endl << M << endl;
 
 
  cv::Mat W,U,Vt;
@@ -670,7 +717,100 @@ bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename){
 }
 
 
-void projectCloudIntoProjector(const Cloud& cloud, const cv::Mat& P, cv::Mat& img){
+void foo(){
+ assert(1>0);
+}
+
+Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height){
+
+
+ // ROS_INFO("colorize: min %f %f %f", z_min, z_max, color_height);
+
+
+ Cloud result;// = cloud;
+ cv::Mat img( cloud.height,cloud.width, CV_8UC3);
+ img.setTo(0);
+ cv::Vec3b col;
+ col.val[1] = col.val[2] = 255;
+
+ // not a point (but used to keep the cloud organized
+ pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
+
+ for (uint x=0; x<cloud.width; ++x)
+  for (uint y=0; y<cloud.height; ++y){
+   pcl_Point p = cloud.at(x,y);
+   float z = p.z;
+   if (z != z || z < z_min || z > z_max) continue;
+
+   col.val[0] = int(z/color_height*180)%180;
+
+   //ROS_INFO("H-value: %i", col.val[0]);
+
+   img.at<cv::Vec3b>(y,x) = col;
+  }
+
+
+ cv::cvtColor(img, img, CV_HSV2BGR);
+
+ // cv::namedWindow("bar");
+ // cv::imshow("bar", img);
+ // cv::waitKey(10);
+
+ for (uint y=0; y<cloud.height ; ++y)
+  for (uint x=0; x<cloud.width ; ++x)
+   {
+   pcl_Point p = cloud.at(x,y);
+
+   if (p.z != p.z || p.z < z_min || p.z > z_max){
+    //    result.at(x,y) = nap;
+    result.push_back(nap);
+    continue;
+   }
+
+   cv::Vec3b c = img.at<cv::Vec3b>(y,x);
+
+   p.b = c.val[0];
+   p.g = c.val[1];
+   p.r = c.val[2];
+
+   //  ROS_INFO("col %i %i: %i %i %i",x,y,p.r, p.g, p.b);
+
+   uint32_t rgb = ((uint32_t)c.val[2] << 16 | (uint32_t)c.val[1] << 8 | (uint32_t)c.val[0]);
+   p.rgb = *reinterpret_cast<float*>(&rgb);
+   //
+   //   ROS_INFO("colorizeCloud %i %i: %i %i %i",x,y, p.r, p.g, p.b);
+
+   // result.at(x,y).rgb = *reinterpret_cast<float*>(&rgb);
+
+   result.push_back(p);
+
+   //   p = result.at(x,y);
+   //   int color = *reinterpret_cast<const int*>(&(p.rgb));
+   //   uint8_t r = (0xff0000 & color) >> 16;
+   //   uint8_t g = (0x00ff00 & color) >> 8;
+   //   uint8_t b =  0x0000ff & color;
+   //   ROS_INFO("colorizeCloud2 %i %i: %i %i %i",x,y, r, g, b);
+
+   }
+
+ assert(result.size() == cloud.size());
+
+ result.width = cloud.width;
+ result.height = cloud.height;
+
+ // for (uint x=0; x<result.width; ++x)
+ //  for (uint y=0; y<result.height; ++y){
+ //   pcl_Point p = result.at(x,y);
+ //   ROS_INFO("colorizeCloud2 %i %i: %i %i %i",x,y, p.r, p.g, p.b);
+ //  }
+
+
+ return result;
+}
+
+
+
+void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height){
 
  cv::Mat p(4,1,CV_64FC1);
  cv::Mat px(3,1,CV_64FC1);
@@ -690,7 +830,7 @@ void projectCloudIntoProjector(const Cloud& cloud, const cv::Mat& P, cv::Mat& im
 
   z = cloud.points[i].z;
 
-  if (! z == z) continue;
+  if (z != z) continue;
 
   px = P*p;
   px /= px.at<double>(2);
@@ -698,15 +838,10 @@ void projectCloudIntoProjector(const Cloud& cloud, const cv::Mat& P, cv::Mat& im
   if (x<0 || x >= w || y < 0 || y >= h)
    continue;
 
-  //HACK: rather change whole system
-  z = -z;
-
-  if (z<0.03) continue;
+  if (z<z_min || (z_max > 0 && z > z_max)) continue;
 
 
-  float z_max = 1;
-
-  cv::Scalar col(z/z_max*180,255,255);
+  cv::Scalar col(int(z/color_height*180)%180,255,255);
 
   cv::circle(img, cv::Point(x,y), 2, col,-1);
 
