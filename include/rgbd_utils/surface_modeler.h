@@ -17,6 +17,9 @@
 
 
 
+
+
+
 class Surface_Modeler {
 
  float x_min_, x_max_, y_min_, y_max_;
@@ -40,13 +43,23 @@ class Surface_Modeler {
 // void publishGrid(ros::Publisher& pub, std::string frame, const Cloud& cloud);
 
 
+ cv::Mat height;
+
+
+ bool first_frame;
+
 public:
+
+ float weight;
+ void updateHeight(const Cloud& cloud);
+
 
  uint getTrainingCnt(){return training_data_cnt;}
 
  Surface_Modeler(){
   model_computed = false;
   training_data_cnt = 0;
+  weight = 0.1;
  }
 
  bool computeModel();

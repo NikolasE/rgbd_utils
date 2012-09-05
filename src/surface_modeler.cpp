@@ -76,20 +76,66 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
 
 
 
+void Surface_Modeler::updateHeight(const Cloud& cloud){
+
+ // compute height for each pixel
+ cv::Mat height_sum = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
+ height_sum.setTo(0);
+ cv::Mat hits = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
+ hits.setTo(0);
+
+ for (uint i=0; i<cloud.size(); ++i){
+  pcl_Point p = cloud[i];
+  cv::Point pos = grid_pos(p);
+
+  if (pos.x < 0) continue;
+  assert(0 <= pos.y && 0 <= pos.x && pos.y < cell_cnt_y && pos.x < cell_cnt_x);
+
+  height_sum.at<float>(pos.y,pos.x) += p.z;
+  hits.at<float>(pos.y,pos.x)++;
+
+ }
+
+ for (int x=0; x<cell_cnt_x; ++x)
+  for(int y=0; y<cell_cnt_y; ++y){
+    float hit_cnt = hits.at<float>(y,x);
+
+
+    if (hit_cnt > 0){
+     float height = height_sum.at<float>(y,x)/hit_cnt;
+
+     float old = mean.at<float>(y,x);
+
+     if (first_frame)
+      mean.at<float>(y,x) = height;
+     else{
+      mean.at<float>(y,x) = (1-weight)*old+weight*height;
+     }
+
+     // ROS_INFO("old: %f, current: %f  final: %f", old, height, mean.at<float>(y,x));
+
+    }
+  }
+
+ first_frame = false;
+ training_data_cnt = 1;
+
+}
 
 
 
 int Surface_Modeler::addTrainingFrame(const Cloud& cloud){
 
-// cv::Mat frame = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1,0);
-
- int step = 10;
+ int step = 1;
 
  for (uint i=0; i<cloud.size(); i+=step){
   pcl_Point p = cloud[i];
   cv::Point pos = grid_pos(p);
 
   if (pos.x < 0) continue;
+
+
+  assert(0 <= pos.y && 0 <= pos.x && pos.y < cell_cnt_y && pos.x < cell_cnt_x);
 
   dists[pos.y][pos.x].push_back(p.z);
  }
@@ -105,10 +151,10 @@ bool Surface_Modeler::computeModel(){
 // ROS_INFO("Computing foreground model");
 
 
- if (training_data_cnt < 1){
-  ROS_WARN("Surface_Modeler: No training data given!");
-  return false;
- }
+// if (training_data_cnt < 1){
+//  ROS_WARN("Surface_Modeler: No training data given!");
+//  return false;
+// }
 
  variance.setTo(0);
  mean.setTo(0);
@@ -121,8 +167,7 @@ bool Surface_Modeler::computeModel(){
   for (int y=0; y<cell_cnt_y; ++y){
    vector<float>* ds = &dists[y][x];
 
-   float mu = 0;
-   float sigma = 0;
+
 
    uint meas_cnt = ds->size();
 
@@ -137,7 +182,17 @@ bool Surface_Modeler::computeModel(){
    hit_cnt++;
    mean_meas_cnt += meas_cnt;
 
-   for (uint i=0; i<ds->size(); ++i){ mu += ds->at(i)/meas_cnt; }
+   assert(meas_cnt>0);
+   float mu = 0;
+   float sigma = 0;
+
+   for (uint i=0; i<ds->size(); ++i){
+    mu += ds->at(i); // /meas_cnt;
+   }
+
+   mu /= meas_cnt;
+
+
    for (uint i=0; i<ds->size(); ++i){ sigma += pow(ds->at(i)-mu,2)/meas_cnt; }
 
    //   ROS_INFO("%f, %f", mu, sigma);
@@ -396,5 +451,7 @@ void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_mi
 
  training_data_cnt = 0;
  model_computed = false;
+ first_frame = true;
+
 
 }
