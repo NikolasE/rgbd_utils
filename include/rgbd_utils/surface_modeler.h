@@ -29,7 +29,7 @@ class Surface_Modeler {
  cv::Mat mean;
  cv::Mat variance;
 
- cv::Point grid_pos(const pcl_Point& p);
+ inline cv::Point grid_pos(const pcl_Point& p);
 
  uint training_data_cnt;
  bool model_computed;

@@ -45,7 +45,7 @@ struct Mesh_visualizer {
  Mesh_visualizer(){}
 
 
- visualization_msgs::Marker visualizeMesh(const pcl::PolygonMesh& mesh);
+ void visualizeMesh(const pcl::PolygonMesh& mesh);
  void visualizeMeshLines(const Cloud& cloud, const pcl::PolygonMesh& mesh);
  void visualizeHeightLines(const std::vector<Line_collection>& lc);
 

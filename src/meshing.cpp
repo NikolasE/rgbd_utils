@@ -64,7 +64,7 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_lengt
  pcl::PolygonMesh mesh;
 
 
- ROS_INFO("Creating mesh for %i %i grid", cloud.width, cloud.height);
+// ROS_INFO("Creating mesh for %i %i grid", cloud.width, cloud.height);
 
  int width = cloud.width;
 
@@ -72,14 +72,8 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_lengt
  pcl::toROSMsg( cloud, msg);
  mesh.cloud = msg;
 
- // colorizeCloud(cloud, 100,100,0.1);
-
-
- // std::vector<pcl::Vertices> polygons;
-
  pcl::Vertices vertices;
 
- ROS_INFO("Meshing: w: %i,  h: %i",cloud.width, cloud.height );
 
  for (uint x = 0; x<cloud.width-1; ++x)
   for (uint y = 0; y<cloud.height-1; ++y){
@@ -105,7 +99,7 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_lengt
 
   }
 
- ROS_INFO("Mesh hast %zu triangles", mesh.polygons.size());
+// ROS_INFO("Mesh hast %zu triangles", mesh.polygons.size());
 
  return mesh;
 }
@@ -238,12 +232,9 @@ void Mesh_visualizer::visualizeHeightLines(const std::vector<Line_collection>& l
    marker.points.push_back(p);
    marker.points.push_back(q);
 
-
    //   ROS_INFO("Adding point to visualizer: %f %f %f", p.x,p.y,p.z);
    //   ROS_INFO("Adding point to visualizer: %f %f %f", q.x,q.y,q.z);
 
-
-   // push colors?
   }
  }
 
@@ -253,10 +244,12 @@ void Mesh_visualizer::visualizeHeightLines(const std::vector<Line_collection>& l
 
 
 
-visualization_msgs::Marker Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh& mesh){
+void Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh& mesh){
 
- // if (pub_.getNumSubscribers() == 0) {ROS_INFO("mesh: no one is listening"); return;}
 
+ if (pub_.getNumSubscribers() == 0) {
+   return;
+  }
 
  Cloud cloud;
  pcl::fromROSMsg(mesh.cloud, cloud);
@@ -287,10 +280,7 @@ visualization_msgs::Marker Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh
 
  marker.lifetime = ros::Duration();
 
-
- // ROS_INFO("Mesh has %zu triangles",mesh.polygons.size());
  for (uint i=0; i<mesh.polygons.size(); ++i){
-  //  ROS_INFO("i: %i",i);
   pcl::Vertices vtc = mesh.polygons[i];
 
   assert(vtc.vertices.size() == 3);
@@ -298,20 +288,9 @@ visualization_msgs::Marker Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh
   std_msgs::ColorRGBA cols[3];
   geometry_msgs::Point pts[3];
 
-//  bool all_valid = true;
-
   for (uint j=0; j<3; ++j){
 
-   //   ROS_INFO("size: %zu, idx: %i", cloud.size())
-
    pcl_Point cp = cloud.points[vtc.vertices[j]];
-
-//   ROS_INFO("Mesh: %i %i: %i  %f %f %f", i,j,vtc.vertices[j], cp.x, cp.y, cp.z);
-
-//   if (cp.x != cp.x){
-//    all_valid = false;
-//    break;
-//   }
 
    p.x = cp.x;
    p.y = cp.y;
@@ -327,20 +306,6 @@ visualization_msgs::Marker Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh
    cols[j] = col;
   }
 
-//  if (all_valid){
-//
-//
-//   if (max_length > 0){
-//    if (dist(cloud.points[vtc.vertices[0]],cloud.points[vtc.vertices[1]]) > max_length)
-//     continue;
-//
-//    if (dist(cloud.points[vtc.vertices[0]],cloud.points[vtc.vertices[2]]) > max_length)
-//     continue;
-//
-//    if (dist(cloud.points[vtc.vertices[1]],cloud.points[vtc.vertices[2]]) > max_length)
-//     continue;
-//   }
-
    marker.points.push_back(pts[0]);
    marker.points.push_back(pts[1]);
    marker.points.push_back(pts[2]);
@@ -348,20 +313,12 @@ visualization_msgs::Marker Mesh_visualizer::visualizeMesh(const pcl::PolygonMesh
    marker.colors.push_back(cols[0]);
    marker.colors.push_back(cols[1]);
    marker.colors.push_back(cols[2]);
-//  }
-
 
  }
 
-
-
-
- ROS_INFO("sending mesh with %zu points", marker.points.size());
+// ROS_INFO("sending mesh with %zu points", marker.points.size());
 
  pub_.publish(marker);
-
- return marker;
-
 
 }
 
