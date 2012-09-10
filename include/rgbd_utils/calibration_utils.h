@@ -16,7 +16,6 @@
 #include <pcl/common/transform.h>
 
 
-
 Cloud applyMask(const Cloud& current, const cv::Mat& mask);
 
 

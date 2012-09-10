@@ -17,14 +17,12 @@
 
 
 
-
-
-
 class Surface_Modeler {
 
- float x_min_, x_max_, y_min_, y_max_;
+ float x_min_,x_max_, y_min_, y_max_;
  float cell_size_;
  int cell_cnt_x,cell_cnt_y;
+
 
 
  std::vector<std::vector<std::vector<float> > > dists;
@@ -32,30 +30,36 @@ class Surface_Modeler {
  cv::Mat mean;
  cv::Mat variance;
 
- inline cv::Point grid_pos(const pcl_Point& p);
 
  uint training_data_cnt;
  bool model_computed;
-
-
- Mesh_visualizer Mesher;
-
-// void publishGrid(ros::Publisher& pub, std::string frame, const Cloud& cloud);
-
-
- cv::Mat height;
-
 
  bool first_frame;
 
 public:
 
+ cv::Point grid_pos(float x, float y);
+
+ inline cv::Point grid_pos(const pcl_Point& p);
+
+
+ /** Updatefactor used in updateHeight @see updateHeight*/
  float weight;
+
  void updateHeight(const Cloud& cloud);
 
 
+ /**
+  * @return Number of training frames added so far
+  */
  uint getTrainingCnt(){return training_data_cnt;}
 
+ /**
+  * Initialization, sets weight to 0.1
+  *
+  * @return
+  * @see weight
+  */
  Surface_Modeler(){
   model_computed = false;
   training_data_cnt = 0;
@@ -76,6 +80,11 @@ public:
  void getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells = NULL, Cloud* fg_cloud = NULL);
 
  Cloud getModel();
+
+ /**
+  * @return current image with current height estimation for each cell in m as CV_32FC1 image
+  */
+ cv::Mat getHeightImage(){return mean;};
 
 };
 

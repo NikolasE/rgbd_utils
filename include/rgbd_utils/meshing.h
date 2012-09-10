@@ -46,11 +46,11 @@ struct Mesh_visualizer {
 
 
  void visualizeMesh(const pcl::PolygonMesh& mesh);
- void visualizeMeshLines(const Cloud& cloud, const pcl::PolygonMesh& mesh);
+ void visualizeMeshLines(const pcl::PolygonMesh& mesh);
  void visualizeHeightLines(const std::vector<Line_collection>& lc);
 
- // visualize x-direction
- void createHeightLines(const pcl::PolygonMesh& mesh, const Cloud& cloud, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step);
+ void findHeightLines(const pcl::PolygonMesh& mesh, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step);
+
 
  pcl::PolygonMesh createMesh(const Cloud& cloud, float max_length = -1);
 
