@@ -12,13 +12,13 @@ using namespace std;
 
 
 /**
- *
- * @param cloud
- * @param min_prop
- * @param fg_points
- * @param fg_cells
- * @param fg_cloud
- */
+*
+* @param cloud
+* @param min_prop
+* @param fg_points
+* @param fg_cells
+* @param fg_cloud
+*/
 void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells, Cloud* fg_cloud){
 
 
@@ -85,11 +85,11 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
 
 
 /**
- *
- * @param cloud new measurement. For each bin, the average height (h_new) of the new points falling into this bin is calculated. If the
- * old height was h_old, it is updated to h = (1-weight)h_old+weight*h_new.
- *
- */
+*
+* @param cloud new measurement. For each bin, the average height (h_new) of the new points falling into this bin is calculated. If the
+* old height was h_old, it is updated to h = (1-weight)h_old+weight*h_new.
+*
+*/
 void Surface_Modeler::updateHeight(const Cloud& cloud){
 
  // compute height for each pixel
@@ -112,35 +112,36 @@ void Surface_Modeler::updateHeight(const Cloud& cloud){
 
  for (int x=0; x<cell_cnt_x; ++x)
   for(int y=0; y<cell_cnt_y; ++y){
-    float hit_cnt = hits.at<float>(y,x);
+   float hit_cnt = hits.at<float>(y,x);
 
 
-    if (hit_cnt > 0){
-     float height = height_sum.at<float>(y,x)/hit_cnt;
+   if (hit_cnt > 0){
+    float height = height_sum.at<float>(y,x)/hit_cnt;
 
-     float old = mean.at<float>(y,x);
+    float old = mean.at<float>(y,x);
 
-     if (first_frame)
-      mean.at<float>(y,x) = height;
-     else{
-      mean.at<float>(y,x) = (1-weight)*old+weight*height;
-     }
-
-     // ROS_INFO("old: %f, current: %f  final: %f", old, height, mean.at<float>(y,x));
-
+    if (first_frame || (old != old))
+     mean.at<float>(y,x) = height;
+    else{
+     mean.at<float>(y,x) = (1-weight)*old+weight*height;
     }
+
+    // ROS_INFO("old: %f, current: %f  final: %f", old, height, mean.at<float>(y,x));
+
+   }
   }
 
  first_frame = false;
  training_data_cnt = 1;
+ model_computed = true;
 
 }
 
 
 /**
- * @param cloud new measurement points. For each point the corresponding bin is computed and its z-value stored
- * @return number of added trainingframes so far
- */
+* @param cloud new measurement points. For each point the corresponding bin is computed and its z-value stored
+* @return number of added trainingframes so far
+*/
 int Surface_Modeler::addTrainingFrame(const Cloud& cloud){
 
  int step = 1;
@@ -154,6 +155,8 @@ int Surface_Modeler::addTrainingFrame(const Cloud& cloud){
 
   assert(0 <= pos.y && 0 <= pos.x && pos.y < cell_cnt_y && pos.x < cell_cnt_x);
 
+  //  assert()
+
   dists[pos.y][pos.x].push_back(p.z);
  }
 
@@ -163,21 +166,24 @@ int Surface_Modeler::addTrainingFrame(const Cloud& cloud){
 }
 
 /**
- *Computation of mean and variance for all bins from the data gathered by addTrainingFrame.
- * Variance is set to -1 if no trainin data was given for a bin.
- *
- * @return always true
- * @see addTrainingFrame
- */
+*Computation of mean and variance for all bins from the data gathered by addTrainingFrame.
+* Variance is set to -1 if no trainin data was given for a bin.
+*
+* @return always true
+* @see addTrainingFrame
+*/
 bool Surface_Modeler::computeModel(){
 
-// ROS_INFO("Computing foreground model");
+
+ assert(1==0);
+
+ // ROS_INFO("Computing foreground model");
 
 
-// if (training_data_cnt < 1){
-//  ROS_WARN("Surface_Modeler: No training data given!");
-//  return false;
-// }
+ // if (training_data_cnt < 1){
+ //  ROS_WARN("Surface_Modeler: No training data given!");
+ //  return false;
+ // }
 
  variance.setTo(0);
  mean.setTo(0);
@@ -225,26 +231,26 @@ bool Surface_Modeler::computeModel(){
 
   }
 
-// double mean = mean_meas_cnt / hit_cnt;
-//
-//// ROS_INFO("Mean measurement count: %f", mean);
-//
-// double mn, mx;
-//
-// cv::minMaxLoc(mean, &mn, &mx);
-//
-// // ROS_INFO("min: %f, max: %f", mn, mx);
-//
-// cv::Mat foo;
-// foo = (mean-mn)/(mx-mn);
-//
-// cv::minMaxLoc(foo, &mn, &mx);
-//
-// // ROS_INFO("min: %f, max: %f", mn, mx);
-//
-// cv::imwrite("mean.jpg", foo*250);
-//
-//// ROS_INFO("%i of %i cells with measurements", hit_cnt, cell_cnt_x*cell_cnt_y);
+ // double mean = mean_meas_cnt / hit_cnt;
+ //
+ //// ROS_INFO("Mean measurement count: %f", mean);
+ //
+ // double mn, mx;
+ //
+ // cv::minMaxLoc(mean, &mn, &mx);
+ //
+ // // ROS_INFO("min: %f, max: %f", mn, mx);
+ //
+ // cv::Mat foo;
+ // foo = (mean-mn)/(mx-mn);
+ //
+ // cv::minMaxLoc(foo, &mn, &mx);
+ //
+ // // ROS_INFO("min: %f, max: %f", mn, mx);
+ //
+ // cv::imwrite("mean.jpg", foo*250);
+ //
+ //// ROS_INFO("%i of %i cells with measurements", hit_cnt, cell_cnt_x*cell_cnt_y);
 
  model_computed = true;
 
@@ -254,10 +260,10 @@ bool Surface_Modeler::computeModel(){
 
 
 /**
- * @param y
- * @param x 3D  measurement point, intrepreted as (x,y,0)
- * @return corresponding bin coordinates (negative if point is not within grid)
- */
+* @param y
+* @param x 3D  measurement point, intrepreted as (x,y,0)
+* @return corresponding bin coordinates (negative if point is not within grid)
+*/
 cv::Point Surface_Modeler::grid_pos(float x, float y){
  pcl_Point p;
  p.x = x; p.y = y; p.z = 0;
@@ -265,10 +271,10 @@ cv::Point Surface_Modeler::grid_pos(float x, float y){
 }
 
 /**
- *
- * @param p measurement point
- * @return corresponding bin coordinates (negative if point is not within grid)
- */
+*
+* @param p measurement point
+* @return corresponding bin coordinates (negative if point is not within grid)
+*/
 cv::Point Surface_Modeler::grid_pos(const pcl_Point& p){
 
  cv::Point pos;
@@ -289,8 +295,8 @@ cv::Point Surface_Modeler::grid_pos(const pcl_Point& p){
 }
 
 /**
- * Resets the current height estimation
- */
+* Resets the current height estimation
+*/
 void Surface_Modeler::reset(){
  training_data_cnt = 0;
  variance.setTo(0);
@@ -306,11 +312,11 @@ void Surface_Modeler::reset(){
 
 
 /**
- * Initialization of grid from first measurement.
- *
- * @param cell_size length of grid cell in m
- * @param cloud first cloud. size of grid is set so that all points have a minimum distance of 5cm to the border of the grid.
- */
+* Initialization of grid from first measurement.
+*
+* @param cell_size length of grid cell in m
+* @param cloud first cloud. size of grid is set so that all points have a minimum distance of 5cm to the border of the grid.
+*/
 void Surface_Modeler::init(float cell_size, const Cloud& cloud){
 
  // pcl::getMinMax3d();
@@ -342,17 +348,20 @@ void Surface_Modeler::init(float cell_size, const Cloud& cloud){
 
 
 /**
- * Each cell is represented as a point in the middle of the cell and the z-value of the mean of the added training points.
- *  The model has to be computed befor this function is called.
- *
- * @return Model as organized cloud
- * @see computeModel, addTrainingFrame
- */
+* Each cell is represented as a point in the middle of the cell and the z-value of the mean of the added training points.
+*  The model has to be computed befor this function is called.
+*
+* @return Model as organized cloud
+* @see computeModel, addTrainingFrame
+*/
 Cloud Surface_Modeler::getModel(){
+
+ ROS_INFO("Computing model");
 
  Cloud result;
 
- assert(model_computed);
+ if (!model_computed)
+  return result;
 
  double mean_var = 0;
  int cnt = 0;
@@ -361,8 +370,8 @@ Cloud Surface_Modeler::getModel(){
 
  // ROS_INFO("size: %i %i", result.width, result.height);
  for (int y = 0; y<cell_cnt_y; ++y)
- for (int x = 0; x<cell_cnt_x; ++x)
-  {
+  for (int x = 0; x<cell_cnt_x; ++x)
+   {
    pcl_Point p;
 
    float m = mean.at<float>(y,x);
@@ -376,15 +385,19 @@ Cloud Surface_Modeler::getModel(){
    p.y = y_min_+(y+0.5)*cell_size_;
 
 
-//   ROS_INFO("create model: x: %i y: %i  %f %f", x,y,p.x,p.y);
+   //   ROS_INFO("create model: x: %i y: %i  %f %f", x,y,p.x,p.y);
 
 
    if (v < 0){
+    ROS_INFO("NEGATIVE VARIANCE at %i %i!", x,y);
     g = 0; r = 0; b = 0;
     uint32_t rgb = ((uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b);
     p.rgb = *reinterpret_cast<float*>(&rgb);
     p.x = p.y = p.z = std::numeric_limits<float>::quiet_NaN();
     result.push_back(p);
+
+    ROS_INFO("XXXXXXXXX NAN in Model");
+
     continue;
    }else
     p.z = m;
@@ -414,12 +427,12 @@ Cloud Surface_Modeler::getModel(){
 
 
 
-  }
+   }
 
 
  mean_var /= cnt;
 
-// ROS_INFO("mean variance: %f, max: %f", mean_var, max_var);
+ // ROS_INFO("mean variance: %f, max: %f", mean_var, max_var);
 
 
  result.width = cell_cnt_x;
@@ -431,14 +444,14 @@ Cloud Surface_Modeler::getModel(){
 
 
 /**
- * Initialization of the grid
- *
- * @param cell_size length of cell in m
- * @param x_min smallest x-value that is within the grid
- * @param x_max largest x-value that is within the grid
- * @param y_min smallest y-value that is within the grid
- * @param y_max largest y-value that is within the grid
- */
+* Initialization of the grid
+*
+* @param cell_size length of cell in m
+* @param x_min smallest x-value that is within the grid
+* @param x_max largest x-value that is within the grid
+* @param y_min smallest y-value that is within the grid
+* @param y_max largest y-value that is within the grid
+*/
 void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_min, float y_max){
  x_min_ = x_min; x_max_ = x_max; y_min_ = y_min; y_max_ = y_max;
  cell_size_ = cell_size;
@@ -449,6 +462,9 @@ void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_mi
 
  variance = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
  mean = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
+
+ variance.setTo(0);
+
 
  vector<float> v;
  v.reserve(1000);
@@ -464,6 +480,4 @@ void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_mi
  training_data_cnt = 0;
  model_computed = false;
  first_frame = true;
-
-
 }

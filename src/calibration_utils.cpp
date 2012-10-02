@@ -13,11 +13,11 @@
 using namespace std;
 
 /**
- *
- * @param a
- * @param b
- * @return a-b
- */
+*
+* @param a
+* @param b
+* @return a-b
+*/
 pcl_Point sub(const pcl_Point& a,const pcl_Point& b){
  pcl_Point m;
  m.x = a.x-b.x; m.y = a.y-b.y; m.z = a.z-b.z;
@@ -25,83 +25,83 @@ pcl_Point sub(const pcl_Point& a,const pcl_Point& b){
 }
 
 /**
- *
- * @param a will be a+b
- * @param b
- */
+*
+* @param a will be a+b
+* @param b
+*/
 void add(pcl_Point& a,const pcl_Point& b){
  a.x+=b.x; a.y+=b.y; a.z += b.z;
 }
 
 /**
- *
- * @param a will be a/d
- * @param d
- */
+*
+* @param a will be a/d
+* @param d
+*/
 void div(pcl_Point& a, float d){
+ assert(d != 0);
  a.x /= d; a.y /= d; a.z /= d;
 }
 
 
 /**
- *
- * @param p input point
- * @return norm of p
- */
+*
+* @param p input point
+* @return norm of p
+*/
 float norm(const pcl_Point& p){
  return sqrt(p.x*p.x+p.y*p.y+p.z*p.z);
 }
 
 /**
- *
- * @return squared norm of (a-b)
- */
+*
+* @return squared norm of (a-b)
+*/
 float dist_sq(const pcl_Point& a,const pcl_Point& b){
  return pow((a.x-b.x),2)+pow((a.y-b.y),2)+pow((a.z-b.z),2);
 }
 
 /**
- *
- * @param a first input point
- * @param b second input point
- * @return norm of a-b
- */
+*
+* @param a first input point
+* @param b second input point
+* @return norm of a-b
+*/
 float dist(const pcl_Point& a,const pcl_Point& b){
  return norm(sub(a,b));
 }
 
 /**
- *
- * Sets length of input vector to given length
- *
- * @param p input vector
- * @param s new length
- * @return p/|p|*s
- */
+*
+* Sets length of input vector to given length
+*
+* @param p input vector
+* @param s new length
+* @return p/|p|*s
+*/
 pcl_Point setLength(const pcl_Point& p, float s){
  float l = norm(p);
+ assert(l>0);
  pcl_Point out;
 
  out.x = p.x/l*s;
  out.y = p.y/l*s;
  out.z = p.z/l*s;
 
- if (abs(norm(out)-s)> 0.01){
-  ROS_INFO("old; %f %f %f", p.x,p.y,p.z);
-  ROS_INFO("new; %f %f %f", out.x,out.y,out.z);
-  ROS_INFO("dist: %f", abs(norm(out)-s));
-
- }
+ // if (abs(norm(out)-s)> 0.01){
+ //  ROS_INFO("old; %f %f %f", p.x,p.y,p.z);
+ //  ROS_INFO("new; %f %f %f", out.x,out.y,out.z);
+ //  ROS_INFO("dist: %f", abs(norm(out)-s));
+ // }
 
  return out;
 }
 
 /**
- *
- * @param current input point cloud
- * @param mask uchar image with same dimension as input cloud. Only white ( val = 255) pixels are considered foreground.
- * @return Input cloud where non foreground points are replaced by NaN values. (Cloud is still organized)
- */
+* @param current input point cloud
+* @param mask uchar image with same dimension as input cloud. Only white ( val = 255) pixels are considered foreground.
+* @return Input cloud where non foreground points are replaced by NaN values. (Cloud is still organized)
+*/
 Cloud applyMask(const Cloud& current, const cv::Mat& mask){
 
  //cout << "foo" << endl;
@@ -139,15 +139,50 @@ Cloud applyMask(const Cloud& current, const cv::Mat& mask){
 }
 
 
+
 /**
- *
- * @param reference Reference depth for each pixel (background model)
- * @param cloud current cloud from which the background should be removed
- * @param max_dist if a pixel is more than max_dist closer to the cam than the corresponding mask pixel, it's considered foreground
- * @param valids optionel: pixelpositions of all foreground pixels
- * @return All points that are more than max_dist closer to the cam than the corresponding point in the reference cloud
- */
-//TODO: rename function and max_dist
+* @param depth_1   first depth image
+* @param depth_2   second depth image
+* @param mask      mask (if zero, pixel is ignored)
+* @param dist_threshold  maximal absolute distance between pixel values so that the pair is considered similar
+* @param outlier_threshold  maximal number of unsimilar pixel pairs
+* @return  true if both images in the masked area are similar
+*/
+/// If less than  <B>outlier_threshold</B> pixels have an absolute difference larger than  <B>dist_threshold</B>, both images are consindered similar.
+bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* mask, const float dist_threshold, const int outlier_threshold){
+
+ cv::Mat thres;
+ cv::threshold(cv::abs(depth_1-depth_2), thres, dist_threshold,1,CV_THRESH_BINARY);
+
+
+ int outlier;
+
+ // apply mask if given
+ if (mask){
+  cv::Mat masked;
+  thres.copyTo(masked,*mask);
+  outlier = cv::countNonZero(masked);
+ }
+ else{
+  outlier = cv::countNonZero(thres);
+ }
+
+ ROS_INFO("XX Found %i outlier:",outlier);
+ return outlier < outlier_threshold;
+
+}
+
+
+
+/**
+*
+* @param reference Reference depth for each pixel (background model)
+* @param cloud current cloud from which the background should be removed
+* @param max_dist if a pixel is more than max_dist closer to the cam than the corresponding mask pixel, it's considered foreground
+* @param valids optionel: pixelpositions of all foreground pixels
+* @return All points that are more than max_dist closer to the cam than the corresponding point in the reference cloud
+* @todo rename function and max_dist
+*/
 Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std::vector<cv::Point2i>* valids){
 
  Cloud result;
@@ -179,9 +214,9 @@ Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std:
 
 
 /**
- * @param clouds array of input clouds (all of same size)
- * @return Cloud where each point has the mean depth of the corresponding pixels in the input clouds.
- */
+* @param clouds array of input clouds (all of same size)
+* @return Cloud where each point has the mean depth of the corresponding pixels in the input clouds.
+*/
 Cloud computeMean(const std::vector<Cloud>& clouds){
 
  assert(clouds.size() > 1);
@@ -194,7 +229,6 @@ Cloud computeMean(const std::vector<Cloud>& clouds){
   //  assert(clouds[i].is_dense);
   assert(clouds[i].width == out.width && clouds[i].height == out.height);
   //  ROS_INFO("CLoud %i: w: %i, h: %i, s: %i", i, clouds[i].width, clouds[i].height, clouds[i].size());
-
  }
 
 
@@ -207,13 +241,9 @@ Cloud computeMean(const std::vector<Cloud>& clouds){
    pcl_Point mean; mean.x = mean.y = mean.z = 0;
    int cnt = 0;// number of clouds that have a measurement at this position
 
-   //   ROS_INFO("%i %i", x,y);
-
 
    for (uint i=0; i<clouds.size(); ++i){
-    //    cout << "i" << i << endl;
     pcl_Point p = clouds[i].at(x,y);
-    //     cout << "b" << endl;
     if (p.x != p.x) continue; // NaN value
     add(mean, p);
     cnt++;
@@ -221,18 +251,14 @@ Cloud computeMean(const std::vector<Cloud>& clouds){
 
 
    if (cnt == 0){
-    //    cout << "nan" << endl;
     out.at(x,y) = clouds[0](x,y); // copy a nan-point at this position
    }else{
 
     div(mean,cnt);
-    //    cout << "mean n=" << cnt << endl;
     out.at(x,y) = mean;
-    //    cout << "out" << cnt << endl;
     total_valid++;
    }
   }
-
 
  // ROS_INFO("Computed mean of %zu cloud, resulting cloud has %i valid points",clouds.size(),total_valid);
 
@@ -282,12 +308,12 @@ void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out
 
 
 /**
- *
- * @param path foldername (with trailing /)
- * @param name name of matrix
- * @param mat output matrix
- * @return true iff matrix was found at path/name.yml
- */
+*
+* @param path foldername (with trailing /)
+* @param name name of matrix
+* @param mat output matrix
+* @return true iff matrix was found at path/name.yml
+*/
 bool loadMat(const string path, const string name, cv::Mat& mat){
  char fn[100]; sprintf(fn,"%s%s.yml", path.c_str(), name.c_str());
  ROS_INFO("Reading %s from %s", name.c_str(),fn);
@@ -304,12 +330,12 @@ bool loadMat(const string path, const string name, cv::Mat& mat){
 }
 
 /**
- *
- * @param path folder (name with trailing /)
- * @param name title for matrix
- * @param mat matrix that will be written to file
- * @return true iff matrix could be stored at folder/name.yml
- */
+*
+* @param path folder (name with trailing /)
+* @param name title for matrix
+* @param mat matrix that will be written to file
+* @return true iff matrix could be stored at folder/name.yml
+*/
 bool saveMat(const string path, const string name, const cv::Mat& mat){
  char fn[100]; sprintf(fn,"%s%s.yml", path.c_str(), name.c_str());
  ROS_INFO("Saving %s to %s", name.c_str(),fn);
@@ -326,7 +352,17 @@ bool saveMat(const string path, const string name, const cv::Mat& mat){
 }
 
 
-// TODO: rename
+/**
+*
+* @todo rename
+*
+* @param points
+* @param normals
+* @param points_out
+* @param normals_out
+* @param step
+* @param mask
+*/
 void sampleCloudWithNormals(const Cloud& points, const Cloud_n& normals, Cloud& points_out,Cloud_n& normals_out, uint step, cv::Mat* mask){
 
  assert(points.size() == normals.size());
@@ -358,10 +394,10 @@ void sampleCloudWithNormals(const Cloud& points, const Cloud_n& normals, Cloud& 
 }
 
 /**
- * @param mask uchar matrix
- * @param in input cloud (same size as mask)
- * @param out all normals in input cloud where corresponding mask pixel has positive value (not organized)
- */
+* @param mask uchar matrix
+* @param in input cloud (same size as mask)
+* @param out all normals in input cloud where corresponding mask pixel has positive value (not organized)
+*/
 void applyMaskOnCloud(const cv::Mat& mask, const pcl::PointCloud<pcl::Normal>& in, pcl::PointCloud<pcl::Normal>& out){
  assert(mask.cols == int(in.width));
  out.clear();
@@ -378,11 +414,12 @@ void applyMaskOnCloud(const cv::Mat& mask, const pcl::PointCloud<pcl::Normal>& i
 
 
 /**
- * @param mask uchar matrix
- * @param in input cloud (same size as mask)
- * @param out all points in input cloud where corresponding mask pixel has positive value (not organized)
- */
-// TODO: template on point Type of cloud
+* @param mask uchar matrix
+* @param in input cloud (same size as mask)
+* @param out all points in input cloud where corresponding mask pixel has positive value (not organized)
+*
+* @todo template on point Type of cloud
+*/
 void applyMaskOnCloud(const cv::Mat& mask, const Cloud& in, Cloud& out){
 
  assert(mask.cols == int(in.width));
@@ -393,7 +430,7 @@ void applyMaskOnCloud(const cv::Mat& mask, const Cloud& in, Cloud& out){
    if (mask.at<uchar>(y,x) > 0){
     pcl_Point p = in.at(x,y);
     if (p.x == p.x)
-    	out.push_back(p);
+     out.push_back(p);
    }
   }
 
@@ -402,14 +439,13 @@ void applyMaskOnCloud(const cv::Mat& mask, const Cloud& in, Cloud& out){
 
 
 /**
- *
- * @param fixed goal pointcloud
- * @param moved moved pointcloud (same size as fixed cloud)
- * @param trafo resulting transformation (fixed = trafo*moved)
- * @param max_dist treshold for evaluation
- * @return computes the affine transformation that minimizes the quadratic distance between cooresponding points. Return value is true iff
- * mean error is smaller than max_dist
- */
+* @param fixed goal pointcloud
+* @param moved moved pointcloud (same size as fixed cloud)
+* @param trafo resulting transformation (fixed = trafo*moved)
+* @param max_dist treshold for evaluation
+* @return computes the affine transformation that minimizes the quadratic distance between cooresponding points. Return value is true iff
+* mean error is smaller than max_dist
+*/
 bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved, Eigen::Affine3f& trafo, float max_dist){
 
 
@@ -529,9 +565,9 @@ bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved
 
 
 /**
- * @param min_cloud reference cloud (pixel is replaced by corresponding entry in current if this point has a smaller z-value)
- * @param current current measurement (same width and height as reference)
- */
+* @param min_cloud reference cloud (pixel is replaced by corresponding entry in current if this point has a smaller z-value)
+* @param current current measurement (same width and height as reference)
+*/
 void update_min_filtered_cloud(Cloud& min_cloud, const Cloud& current){
  for (uint x = 0; x<min_cloud.width; x++)
   for (uint y = 0; y<min_cloud.height; y++){
@@ -556,10 +592,10 @@ void update_min_filtered_cloud(Cloud& min_cloud, const Cloud& current){
 
 
 /**
- * @param pxs input pixel positions
- * @param T Transformation that sets the center of the pixels to (0,0) and the mean distance to sqrt(2)
- * @param transformed transformed input pixels
- */
+* @param pxs input pixel positions
+* @param T Transformation that sets the center of the pixels to (0,0) and the mean distance to sqrt(2)
+* @param transformed transformed input pixels
+*/
 void scalePixels(const std::vector<cv::Point2f>& pxs, cv::Mat& T, std::vector<cv::Point2f>& transformed){
 
  uint c_cnt = pxs.size();
@@ -617,11 +653,11 @@ void scalePixels(const std::vector<cv::Point2f>& pxs, cv::Mat& T, std::vector<cv
 }
 
 /**
- *
- * @param in input point cloud
- * @param mean center of gravity of the points
- * @param out de-meaned pointcloud
- */
+*
+* @param in input point cloud
+* @param mean center of gravity of the points
+* @param out de-meaned pointcloud
+*/
 void centerPointCloud(const Cloud& in, cv::Mat& mean, Cloud* out){
 
  if (in.size() == 0){
@@ -660,10 +696,10 @@ void centerPointCloud(const Cloud& in, cv::Mat& mean, Cloud* out){
 
 
 /**
- * @param pts input point cloud
- * @param U transformation that sets the center of the point cloud to (0,0,0) and the mean norm to sqrt(3)
- * @param transformed transformed pointcloud (center at Origo, mean norm of sqrt(3)
- */
+* @param pts input point cloud
+* @param U transformation that sets the center of the point cloud to (0,0,0) and the mean norm to sqrt(3)
+* @param transformed transformed pointcloud (center at Origo, mean norm of sqrt(3)
+*/
 void scaleCloud(const Cloud& pts, cv::Mat& U, Cloud& transformed){
 
  uint c_cnt = pts.points.size();
@@ -722,19 +758,19 @@ void scaleCloud(const Cloud& pts, cv::Mat& U, Cloud& transformed){
 }
 
 /**
- * @param p Point in R^3
- * @param P projective Transformation (3x4 matrix in homogeneous coordinates)
- * @return Pixel that corresponds to the given world point.
- */
+* @param p Point in R^3
+* @param P projective Transformation (3x4 matrix in homogeneous coordinates)
+* @return Pixel that corresponds to the given world point.
+*/
 cv::Point2f applyPerspectiveTrafo(const Eigen::Vector3f& p,const cv::Mat& P){
  cv::Point3f p3; p3.x = p.x(); p3.y = p.y(); p3.z = p.z();
  return applyPerspectiveTrafo(p3,P);
 }
 
 /**
- * @param p Point in R^3
- * @param P projective Transformation (3x4 matrix in homogeneous coordinates)
- * @param p_ (output) Pixel that corresponds to the given world point.
+* @param p Point in R^3
+* @param P projective Transformation (3x4 matrix in homogeneous coordinates)
+* @param p_ (output) Pixel that corresponds to the given world point.
 */
 void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p_){
  cv::Mat P4 = cv::Mat(4,1,CV_64FC1);
@@ -755,10 +791,10 @@ void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p
 }
 
 /**
- * @param p Point in R^3
- * @param P projective Transformation (3x4 matrix in homogeneous coordinates)
- * @return Pixel that corresponds to the given world point.
- */
+* @param p Point in R^3
+* @param P projective Transformation (3x4 matrix in homogeneous coordinates)
+* @return Pixel that corresponds to the given world point.
+*/
 cv::Point2f applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P){
  cv::Point2f px;
  applyPerspectiveTrafo(p,P,px);
@@ -766,22 +802,24 @@ cv::Point2f applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P){
 }
 
 /**
- * @param p Point in R^3
- * @param P projective Transformation (3x4 matrix in homogeneous coordinates)
- * @return Pixel that corresponds to the given world point.
- */
+* @param p Point in R^3
+* @param P projective Transformation (3x4 matrix in homogeneous coordinates)
+* @return Pixel that corresponds to the given world point.
+*/
 cv::Point2f applyPerspectiveTrafo(const pcl_Point& p, const cv::Mat& P){
  cv::Point3f p3; p3.x = p.x; p3.y = p.y; p3.z = p.z;
  return applyPerspectiveTrafo(p3,P);
 }
 
 /**
- *
- * @param p Point in R^2
- * @param H Homography (homogeneous coordinates)
- * @param p_  result of application of H to p
- */
+*
+* @param p Point in R^2
+* @param H Homography (homogeneous coordinates, 3x3 CV_64FC1 matrix)
+* @param p_  result of application of H to p
+*/
 void applyHomography(const cv::Point2f& p,const cv::Mat& H, cv::Point2f& p_){
+
+ assert(H.cols == 3 && H.rows == 3);
 
  cv::Mat pc (3,1,CV_64FC1);
  pc.at<double>(0) = p.x;
@@ -797,8 +835,8 @@ void applyHomography(const cv::Point2f& p,const cv::Mat& H, cv::Point2f& p_){
 }
 
 /**
- * @param M Affine Transformation that will be printed to stdout
- */
+* @param M Affine Transformation that will be printed to stdout
+*/
 void printTrafo(const Eigen::Affine3f& M){
  for (uint i=0;i<4; ++i){
   for (uint j=0;j<4; ++j)
@@ -808,10 +846,10 @@ void printTrafo(const Eigen::Affine3f& M){
 }
 
 /**
- * @param M Matrix to be written to file
- * @param filename filename
- * @return true iff file could opened
- */
+* @param M Matrix to be written to file
+* @param filename filename
+* @return true iff file could opened
+*/
 bool saveAffineTrafo(const Eigen::Affine3f& M, const char* filename){
  ofstream off(filename);
  if (!off.is_open()){ ROS_WARN("Could not write to %s", filename); return false;}
@@ -825,10 +863,10 @@ bool saveAffineTrafo(const Eigen::Affine3f& M, const char* filename){
 }
 
 /**
- * @param M (output) Affine Matrix that will be loaded fromfile
- * @param filename filename
- * @return true iff file was found
- */
+* @param M (output) Affine Matrix that will be loaded fromfile
+* @param filename filename
+* @return true iff file was found
+*/
 bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename){
  ifstream iff(filename);
 
@@ -846,21 +884,137 @@ bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename){
 
 
 
+
 /**
- *
- * @param cloud input cloud
- * @param z_max points with p.z > z_max are not included in the resulting cloud
- * @param z_min points with p.z < z_min are not included in the resulting cloud
- * @param color_height Hue-Channel is used to compute color. Every color_height m, the colors are repeated
- * @return organized copy of input cloud where the color of each point reflects its z-value. (Ignored points are replaced by NaNs)
- */
-Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height){
+*
+* @param cloud
+* @param color
+* @param color_height
+* @return
+*
+* @todo nice blue colors
+* @todo make compatible to the other colorize cloud so that both functions can be called after
+*/
+//Cloud colorizeCloud(const Cloud& cloud, float min_height, const cv::Mat& color, float color_height){
+// // ROS_INFO("colorize: min %f %f %f", z_min, z_max, color_height);
+//
+//
+// Cloud result;
+// cv::Mat img( cloud.height,cloud.width, CV_8UC3);
+// img.setTo(0);
+// cv::Vec3b col;
+// col.val[1] = col.val[2] = 255;
+//
+// // not a point (but used to keep the cloud organized
+// pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
+//
+//
+// // TODO: use color_height after thresholding as Hue or Saturation Channel
+//
+//
+// for (uint x=0; x<cloud.width; ++x)
+//  for (uint y=0; y<cloud.height; ++y){
+////   pcl_Point p = cloud.at(x,y);
+////   float z = p.z;
+////   if (z != z || z < z_min || z > z_max) continue;
+//
+//   z = color.at<double>(y,x);
+//
+//   if (z<min_height)
+//    continue;
+//
+//
+//   col.val[0] = int(z/color_height*180)%180;
+//
+//   //ROS_INFO("H-value: %i", col.val[0]);
+//
+//   img.at<cv::Vec3b>(y,x) = col;
+//  }
+//
+//
+// cv::cvtColor(img, img, CV_HSV2BGR);
+//
+// // cv::namedWindow("bar");
+// // cv::imshow("bar", img);
+// // cv::waitKey(10);
+//
+// for (uint y=0; y<cloud.height ; ++y)
+//  for (uint x=0; x<cloud.width ; ++x)
+//   {
+//   pcl_Point p = cloud.at(x,y);
+//   z = color.at<double>(y,x);
+//
+//   if (z<min_height){
+//    result.push_back(nap);
+//    continue;
+//   }
+//
+//   cv::Vec3b c = img.at<cv::Vec3b>(y,x);
+//
+//   p.b = c.val[0];
+//   p.g = c.val[1];
+//   p.r = c.val[2];
+//
+//   //  ROS_INFO("col %i %i: %i %i %i",x,y,p.r, p.g, p.b);
+//
+//   uint32_t rgb = ((uint32_t)c.val[2] << 16 | (uint32_t)c.val[1] << 8 | (uint32_t)c.val[0]);
+//   p.rgb = *reinterpret_cast<float*>(&rgb);
+//   //
+//   //   ROS_INFO("colorizeCloud %i %i: %i %i %i",x,y, p.r, p.g, p.b);
+//
+//   // result.at(x,y).rgb = *reinterpret_cast<float*>(&rgb);
+//
+//   result.push_back(p);
+//
+//   //   p = result.at(x,y);
+//   //   int color = *reinterpret_cast<const int*>(&(p.rgb));
+//   //   uint8_t r = (0xff0000 & color) >> 16;
+//   //   uint8_t g = (0x00ff00 & color) >> 8;
+//   //   uint8_t b =  0x0000ff & color;
+//   //   ROS_INFO("colorizeCloud2 %i %i: %i %i %i",x,y, r, g, b);
+//
+//   }
+//
+// assert(result.size() == cloud.size());
+//
+// result.width = cloud.width;
+// result.height = cloud.height;
+//
+// // for (uint x=0; x<result.width; ++x)
+// //  for (uint y=0; y<result.height; ++y){
+// //   pcl_Point p = result.at(x,y);
+// //   ROS_INFO("colorizeCloud2 %i %i: %i %i %i",x,y, p.r, p.g, p.b);
+// //  }
+//
+//
+// return result;
+//}
+
+
+
+/**
+* @param cloud input cloud
+* @param z_max points with p.z > z_max are not included in the resulting cloud
+* @param z_min points with p.z < z_min are not included in the resulting cloud
+* @param color_height Hue-Channel is used to compute color. Every color_height m, the colors are repeated
+* @return organized copy of input cloud where the color of each point reflects its z-value. (Ignored points are replaced by NaNs)
+*/
+//Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height){
+Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height, const cv::Mat* water_depth, double max_water_height, float min_water_height){
 
 
  // ROS_INFO("colorize: min %f %f %f", z_min, z_max, color_height);
 
 
- Cloud result;// = cloud;
+ if (water_depth){
+  if (!(water_depth->cols == int(cloud.width) && water_depth->rows == int(cloud.height))){
+   ROS_INFO("Water: %i %i, cloud: %i %i", water_depth->cols, water_depth->rows, cloud.width, cloud.height);
+  }
+
+ }
+
+
+ Cloud result;
  cv::Mat img( cloud.height,cloud.width, CV_8UC3);
  img.setTo(0);
  cv::Vec3b col;
@@ -875,11 +1029,24 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
    float z = p.z;
    if (z != z || z < z_min || z > z_max) continue;
 
-   col.val[0] = int(z/color_height*180)%180;
 
-   //ROS_INFO("H-value: %i", col.val[0]);
 
-   img.at<cv::Vec3b>(y,x) = col;
+   // If there is water, use this to color the point, otherwise use the height information
+   double depth;
+   if (water_depth)
+    depth = water_depth->at<double>(y,x);
+
+   if (water_depth && depth > min_water_height){
+    depth = max(depth, max_water_height);
+    col.val[1] = 255;//int(depth/max_water_height*250);
+    col.val[0] = 255; // ???
+    img.at<cv::Vec3b>(y,x) = col;
+   }else{
+    col.val[0] = int(z/color_height*180)%180;
+    col.val[1] = 255;
+    img.at<cv::Vec3b>(y,x) = col;
+   }
+
   }
 
 
@@ -894,8 +1061,10 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
    {
    pcl_Point p = cloud.at(x,y);
 
-   if (p.z != p.z || p.z < z_min || p.z > z_max){
-    //    result.at(x,y) = nap;
+   bool water_valid = (water_depth && water_depth->at<double>(y,x) > min_water_height);
+   bool land_valid = !(p.z != p.z || p.z < z_min || p.z > z_max);
+
+   if (!(water_valid || land_valid)){
     result.push_back(nap);
     continue;
    }
@@ -926,6 +1095,7 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
 
    }
 
+// ROS_INFO("result: %zu, cloud: %zu", result.size(), cloud.size());
  assert(result.size() == cloud.size());
 
  result.width = cloud.width;
@@ -943,13 +1113,13 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
 
 
 /**
- * @param cloud input Pointcloud
- * @param P Projection Matrix (3x4 in homogenous coordinates)
- * @param img output image: every valid point is projected into the image and a small circle is drawn at this position. The color reflects the original z-value
- * @param z_max maximal z-value for points that are shown in image
- * @param z_min minimal z-value for points that are shown in image
- * @param color_height Hue-Channel is used for coloring. Every color_height m, the colors are repeated.
- */
+* @param cloud input Pointcloud
+* @param P Projection Matrix (3x4 in homogenous coordinates)
+* @param img output image: every valid point is projected into the image and a small circle is drawn at this position. The color reflects the original z-value
+* @param z_max maximal z-value for points that are shown in image
+* @param z_min minimal z-value for points that are shown in image
+* @param color_height Hue-Channel is used for coloring. Every color_height m, the colors are repeated.
+*/
 void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height){
 
  cv::Mat p(4,1,CV_64FC1);
@@ -993,20 +1163,19 @@ void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, f
 }
 
 
-// TODO: rename z_axis to z_direction
 /**
- *
- * @param y_direction direction of y_direction
- * @param z_axis direction of z_axis
- * @param origin origin of coordinate system
- * @param transformation transformation into the system defined by the origin and the y- and z-axis
- */
-void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_axis,
+*
+* @param y_direction direction of y_direction
+* @param z_direction direction of z_axis
+* @param origin origin of coordinate system
+* @param transformation transformation into the system defined by the origin and the y- and z-axis
+*/
+void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_direction,
   const Eigen::Vector3f& origin, Eigen::Affine3f& transformation){
 
- Eigen::Vector3f x = (y_direction.cross(z_axis)).normalized();
+ Eigen::Vector3f x = (y_direction.cross(z_direction)).normalized();
  Eigen::Vector3f y = y_direction.normalized();
- Eigen::Vector3f z = z_axis.normalized();
+ Eigen::Vector3f z = z_direction.normalized();
 
  Eigen::Affine3f sub = Eigen::Affine3f::Identity();
  sub(0,3) = -origin[0];
@@ -1021,3 +1190,41 @@ void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direct
 
  transformation = transformation*sub;
 }
+
+/**
+*
+* @param depth 32FC1 image
+* @param fx  focal length in x
+* @param fy  focal length in y
+* @param cx  center offset
+* @param cy  center offset
+* @return corresponding pointcloud
+*
+* @todo add version with color
+*/
+/// Creation of the pointcloud from the depth image and camera intrinsics
+Cloud createCloud(const cv::Mat& depth, float fx, float fy, float cx, float cy){
+
+
+ Cloud cloud;
+ cloud.points.resize(depth.cols*depth.rows);
+
+
+ int pos = 0;
+ for (int y = 0; y< depth.rows; ++y)
+  for (int x = 0; x< depth.cols; ++x){
+
+   pcl_Point p;
+   p.z = depth.at<float>(y,x);
+   p.x = (x - cx) * p.z / fx;
+   p.y = (y - cy) * p.z / fy;
+
+   cloud.points[pos++] = p;
+  }
+
+ cloud.width = depth.cols;
+ cloud.height = depth.rows;
+
+ return cloud;
+}
+

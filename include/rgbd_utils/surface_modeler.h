@@ -38,6 +38,8 @@ class Surface_Modeler {
 
 public:
 
+ bool modelComputed(){return model_computed;}
+
  cv::Point grid_pos(float x, float y);
 
  inline cv::Point grid_pos(const pcl_Point& p);
@@ -80,6 +82,8 @@ public:
  void getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells = NULL, Cloud* fg_cloud = NULL);
 
  Cloud getModel();
+
+ float getCellSize(){return cell_size_;}
 
  /**
   * @return current image with current height estimation for each cell in m as CV_32FC1 image

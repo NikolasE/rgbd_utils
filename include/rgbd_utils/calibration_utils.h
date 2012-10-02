@@ -16,15 +16,14 @@
 #include <pcl/common/transform.h>
 
 
+bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* mask = NULL, const float dist_threshold = 0.05, const int outlier_threshold = 100);
+
+
 Cloud applyMask(const Cloud& current, const cv::Mat& mask);
 
 
 Cloud computeMean(const std::vector<Cloud>& clouds);
 
-/*
- * returns all points the new cloud that have a smaller z-value than the corresponding pixel in the refernce cloud
- *
- */
 Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std::vector<cv::Point2i>* valids = NULL);
 
 
@@ -50,9 +49,12 @@ void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out
 
 void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height = 0.1);
 
-void foo();
 
-Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height);
+Cloud createCloud(const cv::Mat& depth, float fx, float fy, float cx, float cy);
+
+Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height, const cv::Mat* color = NULL, double max_water_height = 0.2, float min_water_height = 0.01);
+
+//Cloud colorizeCloud(const Cloud& cloud, float min_height, const cv::Mat& color, float color_height);
 
 
 bool loadMat(const std::string path, const std::string filename, cv::Mat& mat);
@@ -65,7 +67,6 @@ void applyMaskOnCloud(const cv::Mat& mask, const pcl::PointCloud<pcl::Normal>& i
 void sampleCloudWithNormals(const Cloud& points, const Cloud_n& normals, Cloud& points_out,Cloud_n& normals_out, uint step, cv::Mat* mask = NULL);
 
 
-// p_ = H*p
 void applyHomography(const cv::Point2f& p,const cv::Mat& H, cv::Point2f& p_);
 
 void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p_);
@@ -84,11 +85,12 @@ void scalePixels(const std::vector<cv::Point2f>& pxs,cv::Mat& T, std::vector<cv:
 bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved, Eigen::Affine3f& trafo, float max_dist = 0.05);
 
 
-// TODO: use this function in scaleCloud to prevent doubled code
-/*
- * Compute center of pointcloud as column-vector
- * if out!=NULL it contains the demeaned pointcloud
- */
+/**
+* Compute center of pointcloud as column-vector
+* if out!=NULL it contains the demeaned pointcloud
+* @todo use this function in scaleCloud to prevent doubled code
+*
+*/
 void centerPointCloud(const Cloud& in, cv::Mat& mean, Cloud* out = NULL);
 
 

@@ -18,6 +18,7 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 
 
+rosbuild_add_boost_directories()
 
   
 #uncomment if you have defined messages
@@ -33,4 +34,10 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #rosbuild_add_executable(example examples/example.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
 
-rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/meshing.cpp src/surface_modeler.cpp)
+rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp)
+rosbuild_link_boost(rgbd_utils thread signals system)
+
+rosbuild_add_executable(boost_test src/ants.cpp)
+rosbuild_add_executable(a_star_test src/a_star.cpp)
+rosbuild_link_boost(boost_test thread signals system)
+
