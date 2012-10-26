@@ -57,7 +57,7 @@ struct Mesh_visualizer {
  void visualizeHeightLinesOnImage(const std::vector<Line_collection>& height_lines, cv::Mat& img, const cv::Mat& P);
 
 
- void getZRangeWithinMaskArea(const Cloud& cloud, const cv::Mat& mask, float& min_z, float& max_z);
+ void getZRange(const Cloud& cloud, float& min_z, float& max_z, const cv::Mat* mask = NULL);
 
 
 };

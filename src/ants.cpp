@@ -11,6 +11,60 @@
 using namespace boost;
 using namespace std;
 
+/**
+* cost depending on local shape.
+*
+* Walking in a plane is more expensive than walking on an equipotential line around a mountain
+*
+* @param x
+* @param y
+* @return local_cost_factor*(mean of absolute height differences to neighbouring cells)
+*/
+float Path_planner::cost_hillside(int x, int y){
+
+ float h = normed.at<float>(y,x);
+
+
+ // neighbours with manhattan distance smaller than l are taken into account
+ int l = 1;
+
+ int valid_cell_cnt = 0;
+ float height_abs_diff_sum = 0;
+
+ for (int dx = -l; dx <= l; ++dx)
+  for (int dy = -l; dy <= l; ++dy){
+
+   if (dx == 0 && y == 0) continue;
+
+   int x_ = x+dx; int y_ = y+dy;
+
+   if (x_<0 || y_<0 || x_ >= normed.cols || y_ >= normed.rows)
+    continue;
+
+   float h_ = normed.at<float>(y_,x_);
+
+   if (h_ == h_){
+    valid_cell_cnt++;
+    height_abs_diff_sum += abs(h_-h);
+   }
+
+  }
+
+ float cost = 0;
+
+ // there will be no edge to this position
+ if (valid_cell_cnt == 0)
+  return cost;
+
+
+ cost = height_abs_diff_sum/valid_cell_cnt;
+
+
+ return hillside_cost_factor*cost;
+
+
+}
+
 
 
 /**
@@ -24,24 +78,23 @@ using namespace std;
 * @todo parameterize (max ascend,...)
 */
 /// computation of weight to go from current height to neighbouring height
-float Path_planner::cost(float current, float neighbour){
+float Path_planner::cost_height(float current, float neighbour){
 
  float diff = neighbour-current;
 
  float angle = atan(diff)/M_PI*180;
 
- //  float max_angle_deg = 45;
-
- //  ROS_INFO("heights: %f %f Angle: %f",current, neighbour, angle);
-
  // not traversable (to steep to ascend or descend)
  if (abs(angle) > max_angle_deg)
   return -1;
 
+ // ROS_INFO("heights: %f %f Angle: %f",current, neighbour, angle);
+
+
  // simple linear interpolation for cost definition
 
  //     angle     | cost
- // - max_angle:  |   0.5
+ // - max_angle   |   0.5
  //      0        |    1
  //   max_angle   |   1.5
 
@@ -51,11 +104,11 @@ float Path_planner::cost(float current, float neighbour){
  /*
   * Asymetric cost. Otherwise, climbing a hill and going down again is like walking through a plane
   */
-  if (neighbour > current > 0) cost *= uphill_factor;
+ if (neighbour > current) cost *= uphill_factor;
 
  // assert(0.5 <= cost && cost <= 1.5);
 
- return cost;
+ return cost*height_cost_factor;
 
 }
 
@@ -85,51 +138,91 @@ inline int pos2id(const cv::Point& p, int width){
 * @param current_id
 * @param neighbour
 * @param current_height
-* @param map
-* @param edges
-* @param edge_costs
 * @return if edges were added (neighbour within height map and relative height not to large)
 */
-inline bool Path_planner::addEdges(const int current_id, const cv::Point& neighbour, float current_height, cv::Mat* map, vector<Edge>* edges,vector<float>* edge_costs){
+inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& neighbour, float current_height){
 
- if (neighbour.x < 0 || neighbour.y < 0 || neighbour.x >= map->cols || neighbour.y >= map->rows)
-  return false;
+ if (neighbour.x < 0 || neighbour.y < 0 || neighbour.x >= normed.cols || neighbour.y >= normed.rows)
+  return EDGE_NONE;
 
- //assert(neighbour.x < map->cols && neighbour.y < map->rows);
+ //assert(neighbour.x < normed.cols && neighbour.y < normed.rows);
 
- float neighbour_height = map->at<float>(neighbour.y,neighbour.x);
+ float neighbour_height = normed.at<float>(neighbour.y,neighbour.x);
 
- int neighbour_id = pos2id(neighbour, map->cols);
+ int neighbour_id = pos2id(neighbour, normed.cols);
 
-
- cv::Point current = id2pos(current_id, map->cols);
-
+ cv::Point current = id2pos(current_id, normed.cols);
 
 
- float dist_cost = sqrt(pow(neighbour.x - current.x,2)+pow(neighbour.y - current.y,2));
-
-
- float height_cost = cost(current_height, neighbour_height);
-
- // if (height_cost!=100)
- //  ROS_INFO("dist: %f, height: %f", dist_cost, height_cost);
-
- // cout << height_cost << endl;
- if (height_cost >= 0) {
-  edges->push_back(Edge(current_id, neighbour_id));
-  edge_costs->push_back(height_cost+dist_cost);
+ float water_depth = 0;
+ if (water_map.size() == height_map.size()){
+  water_depth = water_map.at<double>(neighbour.y, neighbour.x);
  }
 
- height_cost = cost(neighbour_height, current_height);
- if (height_cost >= 0) {
-  edges->push_back(Edge(neighbour_id, current_id));
-  edge_costs->push_back(height_cost+dist_cost);
+
+ float dist_cost = path_length_factor*sqrt(pow(neighbour.x - current.x,2)+pow(neighbour.y - current.y,2));
+
+ float height_cost = cost_height(current_height, neighbour_height);
+ float hillside_cost = cost_hillside(current.x, current.y);
+
+ Edge edge(current_id, neighbour_id);
+
+ /*
+  * Other cell is covered by water, very expensive to walk across.
+  * An edge is created nonetheless, so that a path can still be planned.
+  */
+ if (water_depth > allowed_water_depth){
+  edges.push_back(edge);
+  edge_costs.push_back(untraversable_cost);
+  edge_map[edge] = Edge_info(untraversable_cost,EDGE_WATER);
+  return EDGE_WATER;
  }
 
- return true;
+ // height_cost is negative if the height difference is too big.
+ if (height_cost < 0){
+  edges.push_back(edge);
+  edge_costs.push_back(untraversable_cost);
+  edge_map[edge] = Edge_info(untraversable_cost,EDGE_TOO_STEEP);
+  return EDGE_TOO_STEEP;
+ }
+
+
+ // last case:
+ assert(height_cost>=0);
+ float total_cost = height_cost+dist_cost+hillside_cost;
+
+ edges.push_back(edge);
+ edge_costs.push_back(total_cost);
+ edge_map[edge] = Edge_info(total_cost,EDGE_NORMAL);
+
+ return EDGE_NORMAL;
+
 }
 
 
+
+
+void Path_planner::saveHillSideCostImage(){
+
+
+ cv::Mat img(normed.rows, normed.cols, CV_8UC3);
+
+ float max_cost = 1; // given in cell_distances
+
+ // ROS_INFO("img: %i %i", normed.rows, normed.cols);
+
+ for (int x = 0; x<normed.cols; ++x)
+  for (int y = 0; y<normed.rows; ++y){
+   float c = cost_hillside(x,y)/hillside_cost_factor;
+
+   //   ROS_INFO("x,y: %i %i: %f", x,y,c);
+
+   img.at<cv::Vec3b>(y,x) = cv::Vec3b(c/max_cost*255,c/max_cost*255,c/max_cost*255);
+  }
+
+ cv::imwrite("hillside_cost.png", img);
+
+}
 
 
 
@@ -137,8 +230,12 @@ inline bool Path_planner::addEdges(const int current_id, const cv::Point& neighb
 *
 * @param goal   goal position withing height map to which the routes are computed
 * @param cell_size_m  edge_length in m of a cell
+* @todo separate graph construction from path planning
 */
 void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
+
+ ROS_INFO("computePolicy: %i %i", goal_.x, goal_.y);
+
 
  goal_ = goal;
 
@@ -148,13 +245,20 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
  assert(goal_.x < height_map.cols && goal_.y < height_map.rows);
 
 
+ edge_costs.clear();
+ edges.clear();
+ edge_map.clear();
+
  // normalize so that points with the same height have a distance of 1 and heights
  // are measured in multiples of the cell size
- cv::Mat normed = height_map/cell_size_m;
+ normed = height_map/cell_size_m;
 
 
- vector<Edge> edges;
- vector<float> edge_costs;
+ if (apply_smoothing){
+  cv::GaussianBlur(normed, normed, cv::Size(3,3),1,1);
+  //  ROS_INFO("With Smooting");
+ }
+
 
  int width = height_map.cols;
 
@@ -165,6 +269,13 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
  uint valid_transitions = 0;
 
+
+ // // number of normal edges
+ // int edge_normal_cnt = 0;
+ // // number of water edges
+ // int edge_water_cnt = 0;
+ // // number of edges that were not added due to
+ // int edge_none_cnt = 0;
 
  for (int x=0; x<normed.cols; ++x){
   current.x = x;
@@ -178,16 +289,16 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
    if (use_four_neighbours){
     // upwards (addEdges returns false if neighboring pixel is not within image
-    if (addEdges(current_id, cv::Point(x,y-1), current_height, &normed, &edges, &edge_costs)){ valid_transitions++; valid_current++;}
+    if (addEdges(current_id, cv::Point(x,y-1), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
 
     // downwards
-    if (addEdges(current_id, cv::Point(x,y+1), current_height, &normed, &edges, &edge_costs)){ valid_transitions++; valid_current++;}
+    if (addEdges(current_id, cv::Point(x,y+1), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
 
     // left
-    if (addEdges(current_id, cv::Point(x-1,y), current_height, &normed, &edges, &edge_costs)){ valid_transitions++; valid_current++;}
+    if (addEdges(current_id, cv::Point(x-1,y), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
 
     // right
-    if (addEdges(current_id, cv::Point(x+1,y), current_height, &normed, &edges, &edge_costs)){ valid_transitions++; valid_current++;}
+    if (addEdges(current_id, cv::Point(x+1,y), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
    }else{
 
     // all eight neighbors
@@ -195,14 +306,11 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
      for (int dy = -1; dy <= 1; dy++){
       if (dx == 0 && dy == 0) continue;
 
-      //     ROS_INFO("dx,dy: %i %i", dx, dy);
-
-      if (addEdges(current_id, cv::Point(x+dx,y+dy), current_height, &normed, &edges, &edge_costs)){
+      if (addEdges(current_id, cv::Point(x+dx,y+dy), current_height) == EDGE_NORMAL){
        valid_transitions++; valid_current++;
       }
      }
    }
-   //   ROS_INFO("%i %i has %i edges", x,y,valid_current);
 
   }
 
@@ -213,14 +321,20 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
  ROS_INFO("Created grid with %zu edges", edges.size());
 
-
  graph_t g(&edges[0], &edges[0] + edges.size(), &edge_costs[0], num_nodes);
 
+ ROS_INFO("Creaed graph");
+
+ // computation of path
  std::vector<vertex_descriptor> p(num_vertices(g));
  std::vector<int> d(num_vertices(g));
  vertex_descriptor s = vertex(pos2id(goal_.x, goal_.y,width), g);
 
+
  dijkstra_shortest_paths(g, s, predecessor_map(&p[0]).distance_map(&d[0]));
+
+ ROS_INFO("called dijkstra");
+
 
  // ros::Time end_time = ros::Time::now();
 
@@ -229,7 +343,6 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
  // resulting policy: in each pixel, the relative coordinate of the neighbouring pixel in the direction to the goal is inserted
  policy = cv::Mat(normed.rows, normed.cols, CV_32FC2);
-
 
  graph_traits < graph_t >::vertex_iterator vi, vend;
  for (tie(vi, vend) = vertices(g); vi != vend; ++vi) {
@@ -243,6 +356,7 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
   policy.at<cv::Vec2f>(cur.y,cur.x) = dir;
 
+
   //  if (dir.val[0] == dir.val[1] && dir.val[0] == 0){
   //   ROS_INFO("Single node: %i %i", cur.x,cur.y);
   //  }
@@ -251,24 +365,28 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
   //  std::cout << "parent(" << name[*vi] << ") = " << name[ p[*vi]] << std::
  }
 
- // TODO: store pathlength to goal for each cell
 
 
+ policy_computed = true;
  // return policy;
 
 }
 
 
-bool Path_planner::printPath(cv::Point start){
+bool Path_planner::computePath(cv::Point start){
  assert(start.x >=0 && start.x < policy.cols);
 
- cv::Point current = start;
+ if (!policy_computed){
+  ROS_FATAL("Trying to compute Path without policy");
+  assert(policy_computed);
+ }
 
- ROS_INFO("start: %i %i, end: %i %i", start.x, start.y, goal_.x, goal_.y);
+ // ROS_INFO("start: %i %i, end: %i %i", start.x, start.y, goal_.x, goal_.y);
 
- int length = 0;
+ //#define SAVE_PATH
 
-
+#ifdef SAVE_PATH
+ // draw heightmap as 8UC3 image
  cv::Mat img = cv::Mat(height_map.rows, height_map.cols, CV_8UC3);
  for (int x = 0; x<height_map.cols; ++x)
   for (int y = 0; y<height_map.rows; ++y){
@@ -279,34 +397,79 @@ bool Path_planner::printPath(cv::Point start){
   }
 
  cv::imwrite("height_map.png",img*255);
+#endif
 
 
+ path.clear();
+ path_colors.clear();
+ used_edges.clear();
 
+
+ float path_costs = 0;
+
+ path.push_back(cv::Point(start.x,start.y));
+ path_colors.push_back(cv::Vec3b(255,0,0));
+
+ cv::Point current = start;
  while (current.x != goal_.x || current.y != goal_.y){
 
   cv::Vec2f dir = policy.at<cv::Vec2f>(current.y,current.x);
 
   if (dir.val[0] == 0 && dir.val[1] == 0){
    ROS_INFO("Path stopped at %i %i", current.x, current.y);
+
+#ifdef SAVE_PATH
    cv::imwrite("path_partial.png",img);
+#endif
+
    return false;
   }
+
+  int current_id = pos2id(current, policy.cols);
 
   current.x += dir.val[0];
   current.y += dir.val[1];
 
-  // map.at<float>(current.y, current.x) = 125;
+  int next_id = pos2id(current, policy.cols);
 
-  img.at<cv::Vec3b>(current.y, current.x) = cv::Vec3b(255,0,0);
+  Edge used_edge(current_id, next_id);
 
-  length++;
+  assert(edge_map.find(used_edge) != edge_map.end());
 
-  // ROS_INFO("New pos: %i %i", current.x, current.y);
+  Edge_info edge_info = edge_map.at(used_edge);
+
+  path_costs += edge_info.first;
+
+  cv::Vec3b color;
+
+
+  // show different edge types with different colors
+  if (edge_info.second == EDGE_NORMAL)
+   color = cv::Vec3b(0,255,0); // green
+
+  if (edge_info.second == EDGE_WATER)
+   color = cv::Vec3b(0,0,255); // blue
+
+  if (edge_info.second == EDGE_TOO_STEEP)
+   color = cv::Vec3b(255,0,0); // red
+
+#ifdef SAVE_PATH
+  img.at<cv::Vec3b>(current.y, current.x) = color;
+#endif
+
+  path_colors.push_back(color);
+  path.push_back(cv::Point(current.x,current.y));
+  used_edges.push_back(edge_info);
  }
 
- ROS_INFO("Path length: %i", length);
+ ROS_INFO("Path length: %zu, col length: %zu, cost: %f", path.size(), path_colors.size(), path_costs);
 
+ assert(path.size() == path_colors.size() && used_edges.size() == path.size()-1);
+
+#ifdef SAVE_PATH
  cv::imwrite("path.png",img);
+#endif
+
 
  return true;
 
@@ -343,12 +506,84 @@ void testDijkstra(int x, int y){
  planner.computePolicy(goal,1);
 
  // cv::Mat policy = planner.getPolicy();
- planner.printPath(cv::Point(x,y));
+ planner.computePath(cv::Point(x,y));
  // printPath(cv::Point(x,y), goal, policy, height);
  // cv::imwrite("after.png", height);
 
 
 }
+
+
+void Ant::walk(float new_funding){
+ assert(new_funding >=0);
+
+ if (state == ANT_NOT_INITIALIZED){
+  ROS_INFO("Trying to move an uninitialized Ant");
+  return;
+ }
+
+ if (state != ANT_MOVING)
+  return;
+
+
+ assert(pos < used_edges.size());
+ Edge_info edge = used_edges[pos];
+
+ float cost = edge.first;
+
+ // check if edge is traversable
+ if (edge.second != EDGE_NORMAL){
+  state = ANT_IN_FRONT_OF_OBSTACLE;
+  return;
+ }
+
+ // new funding for next step (only added if next edge is traversable)
+ bank_account += new_funding;
+
+
+ // check if there is enough money to pay for this step
+ if (cost > bank_account){
+//  ROS_INFO("Next step would cost %f, but I only have %f", cost, bank_account);
+  return;
+ }
+
+
+ // next edge is traversable and also affordable
+
+ pos++;
+ bank_account -= cost; // pay for step
+ assert(bank_account>=0);
+// ROS_INFO("Just payed %f for one step, I still have %f", cost, bank_account);
+
+ if (pos == path.size()-1){
+
+  if (pendulum){
+
+   std::reverse(path.begin(), path.end());
+   std::reverse(used_edges.begin(), used_edges.end());
+
+   pos = 0;
+   bank_account = 0;
+
+  }else{
+   state = ANT_AT_GOAL;
+  }
+
+  return;
+ }
+
+
+ // take next step (without new funding)
+ walk(0);
+
+
+}
+
+
+
+
+
+
 
 
 

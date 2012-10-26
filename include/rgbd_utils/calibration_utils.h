@@ -14,6 +14,25 @@
 #include <opencv2/highgui/highgui.hpp>
 
 #include <pcl/common/transform.h>
+#include <pcl/features/integral_image_normal.h>
+#include <pcl/visualization/cloud_viewer.h>
+
+
+
+void applyMaskInPlace(cv::Mat& mat, const cv::Mat mask);
+cv::Mat applyMask(cv::Mat& mat, const cv::Mat mask);
+
+
+void heightVisualization(cv::Mat& img, const cv::Mat height, float z_min, float z_max, float color_height,const cv::Mat* mask = NULL);
+void waterVisualization(cv::Mat& img, const cv::Mat& water_depth, float min_water_depth, float max_water_depth,const cv::Mat* mask = NULL);
+void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat& water_depth, float min_water_depth, float max_water_depth,const cv::Mat* mask = NULL);
+
+Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask = NULL);
+
+
+void computeNormals(const Cloud& input, Cloud_n& with_normals);
+
+
 
 
 bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* mask = NULL, const float dist_threshold = 0.05, const int outlier_threshold = 100);
@@ -43,6 +62,9 @@ void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direct
 
 
 
+void showPath(cv::Mat& img, const pcl::PolygonMesh& mesh,const cv::Mat& proj_matrix, const std::vector<cv::Point>* path,  const std::vector<cv::Vec3b>* colors = NULL);
+
+
 void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out);
 
 
@@ -70,11 +92,9 @@ void sampleCloudWithNormals(const Cloud& points, const Cloud_n& normals, Cloud& 
 void applyHomography(const cv::Point2f& p,const cv::Mat& H, cv::Point2f& p_);
 
 void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p_);
+
 cv::Point2f applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P);
-
 cv::Point2f applyPerspectiveTrafo(const Eigen::Vector3f& p,const cv::Mat& P);
-
-
 cv::Point2f applyPerspectiveTrafo(const pcl_Point& p, const cv::Mat& P);
 
 void scaleCloud(const Cloud& pts, cv::Mat& U, Cloud& transformed);

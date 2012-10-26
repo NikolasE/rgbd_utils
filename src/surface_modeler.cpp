@@ -11,6 +11,41 @@
 using namespace std;
 
 
+
+
+cv::Mat Surface_Modeler::getFGMask(const Cloud& cloud, float max_dist){
+
+ cv::Mat res(cloud.height, cloud.width, CV_8UC1);
+ res.setTo(0);
+
+ int step = 2;
+
+ for (uint x=0; x<cloud.width; x+= step)
+  for (uint y=0; y<cloud.height; y += step){
+   pcl_Point p = cloud.at(x,y);
+   if (p.x!=p.x) continue;
+
+   cv::Point pos = grid_pos(p);
+
+   if (pos.x < 0) continue;
+
+   float h = mean.at<float>(pos.y,pos.x);
+
+   if (p.z > h+max_dist)
+    res.at<uchar>(y,x) = 255;
+  }
+
+
+ if (step>1)
+  cv::dilate(res, res, cv::Mat(), cv::Point(-1,-1),floor(step/2));
+
+ return res;
+
+}
+
+
+
+
 /**
 *
 * @param cloud
@@ -21,14 +56,14 @@ using namespace std;
 */
 void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells, Cloud* fg_cloud){
 
-
+ assert(1==0);
  assert(model_computed);
- ROS_INFO("0");
+
  if (fg_points.cols == int(cloud.width) && fg_points.rows == int(cloud.height))
   fg_points.setTo(0);
  else
   fg_points = cv::Mat(cloud.height, cloud.width, CV_8UC1,0);
- ROS_INFO("1");
+
 
  if (fg_cells){
   if (fg_cells->cols == cell_cnt_x && fg_cells->rows == cell_cnt_y)
@@ -37,7 +72,7 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
    *fg_cells = cv::Mat(cell_cnt_y, cell_cnt_x, CV_8UC1,0);
  }
 
- ROS_INFO("A");
+
 
  if (fg_cloud) fg_cloud->clear();
 
@@ -48,7 +83,7 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
    cv::Point pos = grid_pos(p);
    if (pos.x < 0) continue;
 
-   ROS_INFO("pos %i %i", pos.x, pos.y);
+//   ROS_INFO("pos %i %i", pos.x, pos.y);
 
    float var = variance.at<float>(pos.y, pos.x);
 
@@ -56,13 +91,13 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
 
    float mu = mean.at<float>(pos.y, pos.x);
 
-   ROS_INFO("mu: %f, var: %f, z: %f", mu, var, p.z);
+//   ROS_INFO("mu: %f, var: %f, z: %f", mu, var, p.z);
 
 
    double pre = 1/(var*sqrt(2*M_PI));
    double prob = pre*exp(-0.5*pow((p.z-mu)/var,2));
 
-   ROS_INFO("mu: %f, var: %f, z: %f, p: %f", mu, var, p.z, prob);
+//   ROS_INFO("mu: %f, var: %f, z: %f, p: %f", mu, var, p.z, prob);
 
    if (prob < min_prop)
     continue;
@@ -90,7 +125,10 @@ void Surface_Modeler::getForeground(const Cloud& cloud, float min_prop, cv::Mat&
 * old height was h_old, it is updated to h = (1-weight)h_old+weight*h_new.
 *
 */
-void Surface_Modeler::updateHeight(const Cloud& cloud){
+bool Surface_Modeler::updateHeight(const Cloud& cloud, const float min_diff_m){
+
+ bool min_diff_active = min_diff_m > 0;
+
 
  // compute height for each pixel
  cv::Mat height_sum = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
@@ -110,6 +148,8 @@ void Surface_Modeler::updateHeight(const Cloud& cloud){
 
  }
 
+ bool dynamic_scene = false;
+
  for (int x=0; x<cell_cnt_x; ++x)
   for(int y=0; y<cell_cnt_y; ++y){
    float hit_cnt = hits.at<float>(y,x);
@@ -120,20 +160,40 @@ void Surface_Modeler::updateHeight(const Cloud& cloud){
 
     float old = mean.at<float>(y,x);
 
-    if (first_frame || (old != old))
+    if (first_frame || (old != old)){
+
+     z_min = min(height, z_min);
+     z_max = max(height, z_max);
+
      mean.at<float>(y,x) = height;
-    else{
-     mean.at<float>(y,x) = (1-weight)*old+weight*height;
     }
+    else{
 
-    // ROS_INFO("old: %f, current: %f  final: %f", old, height, mean.at<float>(y,x));
+     // ignore too large updates (they correspond to the hand moving over the surface)
+     if (!min_diff_active || abs(height-old) < min_diff_m){
 
+      float h_new = (1-weight)*old+weight*height;
+
+      z_min = min(h_new, z_min);
+      z_max = max(h_new, z_max);
+
+      mean.at<float>(y,x) = h_new;
+     }else{
+      dynamic_scene = true;
+     }
+
+    }
    }
   }
 
  first_frame = false;
- training_data_cnt = 1;
+ training_data_cnt = 1; /// ist das noch aktuell?
  model_computed = true;
+
+ //small blur to smooth heightfield
+ cv::GaussianBlur(mean, mean, cv::Size(3,3),2,2);
+
+ return dynamic_scene;
 
 }
 
@@ -288,7 +348,7 @@ cv::Point Surface_Modeler::grid_pos(const pcl_Point& p){
  pos.y = floor((p.y - y_min_)/cell_size_);
 
  if (!(pos.x >= 0 && pos.y >=0) || !(pos.x < cell_cnt_x && pos.y < cell_cnt_y)){
-  pos.x = pos.y = -1; return pos;
+  pos.x = pos.y = -1;
  }
 
  return pos;
@@ -356,8 +416,6 @@ void Surface_Modeler::init(float cell_size, const Cloud& cloud){
 */
 Cloud Surface_Modeler::getModel(){
 
- ROS_INFO("Computing model");
-
  Cloud result;
 
  if (!model_computed)
@@ -401,6 +459,8 @@ Cloud Surface_Modeler::getModel(){
     continue;
    }else
     p.z = m;
+
+   //   ROS_INFO("point at %i %i: %f %f %f", x,y, p.x,p.y,p.z);
 
 
    result.push_back(p);

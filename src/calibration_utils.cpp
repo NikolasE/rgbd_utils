@@ -139,6 +139,63 @@ Cloud applyMask(const Cloud& current, const cv::Mat& mask){
 }
 
 
+/**
+ *
+ * untested
+ *
+ * @param img
+ * @param mesh
+ * @param proj_matrix
+ * @param path
+ * @param colors
+ */
+void showPath(cv::Mat& img, const pcl::PolygonMesh& mesh, const cv::Mat& proj_matrix, const std::vector<cv::Point>* path,  const std::vector<cv::Vec3b>* colors){
+
+ Cloud cloud;
+ pcl::fromROSMsg(mesh.cloud, cloud);
+
+ assert(cloud.width > 1 && cloud.height > 1);
+
+// glColor3f(0,1,0);
+// glLineWidth(5.0);
+
+ int line_width = 3;
+
+ bool with_colors = (colors != NULL);
+
+// ROS_INFO("path: %zu, colors: %zu", path.size(), pathColors.size());
+
+ // draw path in green if no colors are given
+// cv::Vec3b col_green = cv::Vec3b(0,255,0);
+
+ cv::Scalar col(0,255,0);
+
+ cv::Point2f last_pos,current;
+
+ for (uint i=0; i<path->size(); ++i){
+
+  pcl_Point P3 = cloud.at(path->at(i).x, path->at(i).y);
+
+  // project 3D point into image
+  current = applyPerspectiveTrafo(P3,proj_matrix);
+
+  if (i==0){
+   last_pos = current;
+   continue;
+  }
+
+  if (with_colors){
+   col = cv::Scalar(colors->at(i).val[0],colors->at(i).val[1],colors->at(i).val[2]);
+  }
+
+  cv::line(img, last_pos, current, col, line_width);
+ }
+
+
+}
+
+
+
 
 /**
 * @param depth_1   first depth image
@@ -148,7 +205,7 @@ Cloud applyMask(const Cloud& current, const cv::Mat& mask){
 * @param outlier_threshold  maximal number of unsimilar pixel pairs
 * @return  true if both images in the masked area are similar
 */
-/// If less than  <B>outlier_threshold</B> pixels have an absolute difference larger than  <B>dist_threshold</B>, both images are consindered similar.
+/// If less than  <B>outlier_threshold</B> pixels have an absolute difference larger than  <B>dist_threshold</B>, both images are considered similar.
 bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* mask, const float dist_threshold, const int outlier_threshold){
 
  cv::Mat thres;
@@ -169,7 +226,6 @@ bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* ma
 
  ROS_INFO("XX Found %i outlier:",outlier);
  return outlier < outlier_threshold;
-
 }
 
 
@@ -433,6 +489,120 @@ void applyMaskOnCloud(const cv::Mat& mask, const Cloud& in, Cloud& out){
      out.push_back(p);
    }
   }
+
+}
+
+
+/**
+ *
+ * @param mat
+ * @param mask  8UC1-mask
+ */
+/// if res(x,y) = (mask(x,y) == 0) ? mat(x,y) = 0 : 0
+cv::Mat applyMask(cv::Mat& mat, const cv::Mat mask){
+
+// assert(mat.type() == CV_32FC1 || mat.type() == CV_64FC1);
+ assert(mat.size() == mask.size());
+
+ cv::Mat result(mat.size(), mat.type());
+
+ result.setTo(0);
+
+ mat.copyTo(result, mask);
+
+ return result;
+}
+
+/**
+ *
+ * @param mat   CV_32FC1 or CV_64FC1 image
+ * @param mask  8UC1-Image
+ */
+/// if (mask(x,y) == 0) mat(x,y) = 0
+void applyMaskInPlace(cv::Mat& mat, const cv::Mat mask){
+ assert(mat.type() == CV_32FC1 || mat.type() == CV_64FC1);
+ assert(mask.type() == CV_8UC1);
+ assert(mat.size() == mask.size());
+
+ bool float_img = mat.type() == CV_32FC1;
+
+ for (int x=0; x<mat.cols; ++x)
+  for (int y=0; y<mat.rows; ++y){
+
+   if (mask.at<uchar>(y,x) == 0){
+    if (float_img)
+     mat.at<float>(y,x) = 0;
+    else
+     mat.at<double>(y,x) = 0;
+   }
+  }
+
+}
+
+
+
+
+
+/**
+* Takes around 1ms for an 45x50 grid
+*
+* @param input         organized pointcloud
+* @param with_normals  corresponding normals
+*/
+/// computing normals for organized pointcloud with the   <a href="http://www.pointclouds.org/documentation/tutorials/normal_estimation_using_integral_images.php">pcl::IntegralImageNormalEstimation</a>.
+void computeNormals(const Cloud& input, Cloud_n& with_normals){
+
+
+ int nan_point = 0;
+
+ for (uint i=0; i<input.size(); ++i){
+  if (input.at(i).x != input.at(i).x)
+   nan_point++;
+ }
+
+
+ pcl::IntegralImageNormalEstimation<pcl_Point, pcl_Normal> ne;
+
+ ne.setNormalEstimationMethod(ne.COVARIANCE_MATRIX); //AVERAGE_3D_GRADIENT
+ ne.setMaxDepthChangeFactor(0.02f);
+ ne.setNormalSmoothingSize(2.0f);
+ ne.setInputCloud(input.makeShared());
+ ne.compute(with_normals);
+ // ne.setBorderPolicy(ne.BORDER_POLICY_MIRROR);
+
+ // normalize direction of normals
+
+ int nan_cnt = 0;
+
+ for (uint i=0; i<with_normals.size(); ++i){
+  pcl_Normal *n = &with_normals.at(i);
+
+  if (n->normal_x != n->normal_x)
+   nan_cnt++;
+
+  if  (n->normal_z < 0){
+   n->normal_x *=-1;
+   n->normal_y *=-1;
+   n->normal_z *=-1;
+  }
+
+
+ }
+
+ // ROS_INFO("Normals: %i from %zu points without normal (%i pts without pos)", nan_cnt, with_normals.size(), nan_point);
+
+
+// pcl::visualization::PCLVisualizer viewer("PCL Viewer");
+// viewer.setBackgroundColor (0.0, 0.0, 0.5);
+//
+// // viewer.addPointCloud<pcl_Point>(input.makeShared());
+// viewer.addPointCloudNormals<pcl_Point,pcl_Normal>(input.makeShared(), with_normals.makeShared());
+//
+// while (!viewer.wasStopped ())
+//  {
+//  viewer.spinOnce ();
+//  }
+
 
 }
 
@@ -993,18 +1163,220 @@ bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename){
 
 
 /**
+*
+*
+* @param color (8UC3)
+* @param mesh
+* @param mask point is ignored if mask is zero (8UC1)
+*/
+/// transfer colors to the mesh (replace by nan if mask at this position is 0)
+Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask){
+
+ assert(color.cols == int(mesh.width));
+ assert(color.rows == int(mesh.height));
+
+ Cloud result;
+ pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
+
+
+ cv::Vec3b c;
+ uint32_t rgb;
+ pcl_Point p;
+
+ for (int y=0; y<color.rows; ++y)
+  for (int x=0; x<color.cols; ++x)
+   {
+
+   if (mask && mask->at<uchar>(y,x) == 0){
+    result.push_back(nap);
+    continue;
+   }
+
+   c = color.at<cv::Vec3b>(y,x);
+   p = mesh.at(x,y);
+
+   //   ROS_INFO("Mesh: h(%i,%i) = %f", x,y,p.z);
+
+   p.b = c.val[0];
+   p.g = c.val[1];
+   p.r = c.val[2];
+
+   rgb = ((uint32_t)c.val[2] << 16 | (uint32_t)c.val[1] << 8 | (uint32_t)c.val[0]);
+   p.rgb = *reinterpret_cast<float*>(&rgb);
+
+   result.push_back(p);
+   }
+
+ assert(result.size() == mesh.size());
+
+ result.width = mesh.width;
+ result.height = mesh.height;
+
+ return result;
+}
+
+
+/**
+*
+* @param img
+* @param alpha_channel
+* @param water_depth
+* @param min_water_depth
+* @param max_water_depth
+* @param mask
+* @todo implement without loops
+*/
+/// show watervisualization using alpha_channel
+void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat& water_depth, float min_water_depth, float max_water_depth, const cv::Mat* mask){
+
+
+ // alpha_channel = cv::Mat(img.rows, img.cols, CV_32FC1);
+ // cv::Mat new_color = cv::Mat(img.rows, img.cols, CV_8UC3);
+
+
+//  new_color.setTo(0);
+
+ img.setTo(0);
+
+ float alpha;
+
+ cv::Vec3b blue(255,0,0);
+ cv::Vec3b old_col;
+
+ for (int x=0; x<water_depth.cols; ++x)
+  for (int y=0; y<water_depth.rows; ++y){
+
+   if (mask && mask->at<uchar>(y,x) == 0) continue;
+
+   float h = water_depth.at<double>(y,x);
+   if (h != h || h <= min_water_depth) continue;
+
+
+   if (h >= max_water_depth)
+    alpha = 1;
+   else{
+
+    alpha = (h-min_water_depth)/(max_water_depth-min_water_depth);
+    //    alpha = max(min(double(2*(h-min_water_depth)/(max_water_depth-min_water_depth)),1.0),0.0);
+   }
+   old_col = img.at<cv::Vec3b>(y,x);
+
+
+   // interpolate with old image
+   img.at<cv::Vec3b>(y,x) = blue*alpha+old_col*(1-alpha);
+
+   // new_color.at<cv::Vec3b>(y,x) = cv::Vec3b(255,0,0); // blue in BGR
+   //   alpha_channel.at<float>(y,x) = alpha;
+  }
+
+
+
+
+}
+
+
+/**
+*
+* @param img             current colors of cloud (will be modified)
+* @param water_depth     water depth at each position (CV_64FC1)
+* @param min_water_depth cells where the water is higher than this threshold will be visualized
+* @param max_water_depth water depth that corresponds to full color
+* @param mask            positions with mask == 0 will be ignored (8UC1)
+*/
+/// Visualize water depth
+void waterVisualization(cv::Mat& img, const cv::Mat& water_depth, float min_water_depth, float max_water_depth, const cv::Mat* mask){
+
+
+ assert(img.size == water_depth.size);
+ assert(max_water_depth >= min_water_depth);
+
+ if (mask) (assert(mask->size == img.size));
+
+ cv::cvtColor(img,img,CV_BGR2HSV);
+
+ cv::Vec3b col;
+ col.val[2] = 255;
+ col.val[0] = 120; // blue...
+ float h;
+
+ for (int x=0; x<water_depth.cols; ++x)
+  for (int y=0; y<water_depth.rows; ++y){
+
+   if (mask && mask->at<uchar>(y,x) == 0) continue;
+
+   h = water_depth.at<double>(y,x);
+   if (h != h || h <= min_water_depth) continue;
+
+   // change saturation depending on color
+   col.val[1] = max(min(int((h-min_water_depth)/(max_water_depth-min_water_depth)*255),255),20);
+
+   img.at<cv::Vec3b>(y,x) = col;
+  }
+
+ // cv::imwrite("water_HSV.png", img);
+ cv::cvtColor(img,img,CV_HSV2BGR);
+ // cv::imwrite("water_BGR.png", img);
+
+}
+
+
+/**
+* @param img     current colors of cloud (will be modified)
+* @param height  height map of mesh (CV_32FC1)
+* @param z_max   maximal z_value that will be rendered
+* @param z_min   minimal z_value that will be rendered
+* @param color_height  height (in m) of full color range. Colors will repeat if color_height < (z_max-z_min)
+* @mask          all pixels with mask == 0 will be ignored (ignore or set to Null if all pixels should be processed) (8UC1)
+*/
+/// Update colors for visualization depending on height
+void heightVisualization(cv::Mat& img, const cv::Mat height, float z_min, float z_max, float color_height,const cv::Mat* mask){
+
+ assert(img.size == height.size);
+ assert(z_max >= z_min); assert(color_height >= 0);
+
+ if (mask) (assert(mask->size == img.size));
+
+ cv::Vec3b col;
+ col.val[1] = col.val[2] = 255;
+
+ cv::cvtColor(img,img,CV_BGR2HSV);
+
+ float z;
+
+ for (int x=0; x<height.cols; ++x)
+  for (int y=0; y<height.rows; ++y){
+
+   if (mask && mask->at<uchar>(y,x) == 0) continue;
+
+   z = height.at<float>(y,x);
+   if (z != z || z < z_min || z > z_max) continue;
+
+   //   col.val[0] = int((z-z_min)/(color_height-z_min)*180)%180;
+   col.val[0] =  int((z)/(color_height)*180)%180;
+
+   img.at<cv::Vec3b>(y,x) = col;
+  }
+
+ cv::cvtColor(img,img,CV_HSV2BGR);
+
+}
+
+
+/**
 * @param cloud input cloud
 * @param z_max points with p.z > z_max are not included in the resulting cloud
 * @param z_min points with p.z < z_min are not included in the resulting cloud
 * @param color_height Hue-Channel is used to compute color. Every color_height m, the colors are repeated
 * @return organized copy of input cloud where the color of each point reflects its z-value. (Ignored points are replaced by NaNs)
 */
-//Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height){
 Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_height, const cv::Mat* water_depth, double max_water_height, float min_water_height){
 
 
  // ROS_INFO("colorize: min %f %f %f", z_min, z_max, color_height);
 
+
+ assert(z_max >= z_min);
+ assert(color_height >= 0);
 
  if (water_depth){
   if (!(water_depth->cols == int(cloud.width) && water_depth->rows == int(cloud.height))){
@@ -1018,7 +1390,7 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
  cv::Mat img( cloud.height,cloud.width, CV_8UC3);
  img.setTo(0);
  cv::Vec3b col;
- col.val[1] = col.val[2] = 255;
+ col.val[0] = col.val[1] = col.val[2] = 255;
 
  // not a point (but used to keep the cloud organized
  pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
@@ -1071,31 +1443,20 @@ Cloud colorizeCloud(const Cloud& cloud, float z_max, float z_min, float color_he
 
    cv::Vec3b c = img.at<cv::Vec3b>(y,x);
 
+   // todo: Farbe wird zwei Mal gesetzt..
+
    p.b = c.val[0];
    p.g = c.val[1];
    p.r = c.val[2];
 
-   //  ROS_INFO("col %i %i: %i %i %i",x,y,p.r, p.g, p.b);
-
    uint32_t rgb = ((uint32_t)c.val[2] << 16 | (uint32_t)c.val[1] << 8 | (uint32_t)c.val[0]);
    p.rgb = *reinterpret_cast<float*>(&rgb);
-   //
-   //   ROS_INFO("colorizeCloud %i %i: %i %i %i",x,y, p.r, p.g, p.b);
-
-   // result.at(x,y).rgb = *reinterpret_cast<float*>(&rgb);
 
    result.push_back(p);
 
-   //   p = result.at(x,y);
-   //   int color = *reinterpret_cast<const int*>(&(p.rgb));
-   //   uint8_t r = (0xff0000 & color) >> 16;
-   //   uint8_t g = (0x00ff00 & color) >> 8;
-   //   uint8_t b =  0x0000ff & color;
-   //   ROS_INFO("colorizeCloud2 %i %i: %i %i %i",x,y, r, g, b);
-
    }
 
-// ROS_INFO("result: %zu, cloud: %zu", result.size(), cloud.size());
+ // ROS_INFO("result: %zu, cloud: %zu", result.size(), cloud.size());
  assert(result.size() == cloud.size());
 
  result.width = cloud.width;
@@ -1168,7 +1529,7 @@ void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, f
 * @param y_direction direction of y_direction
 * @param z_direction direction of z_axis
 * @param origin origin of coordinate system
-* @param transformation transformation into the system defined by the origin and the y- and z-axis
+* @param transformation transformation into the system defined by the origin and the y- and z-axis (right handed system)
 */
 void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_direction,
   const Eigen::Vector3f& origin, Eigen::Affine3f& transformation){
