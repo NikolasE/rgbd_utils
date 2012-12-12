@@ -33,7 +33,6 @@ typedef std::vector<PointPair>  Line_collection;
 
 struct Mesh_visualizer {
 
-// ros::NodeHandle* nh_;
  ros::Publisher pub_, pub_lines_, pub_height_lines_;
 
  Mesh_visualizer(ros::NodeHandle& nh){
@@ -52,7 +51,7 @@ struct Mesh_visualizer {
  void findHeightLines(const pcl::PolygonMesh& mesh, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step);
 
 
- pcl::PolygonMesh createMesh(const Cloud& cloud, float max_length = -1);
+ pcl::PolygonMesh createMesh(const Cloud& cloud, float max_length = -1, bool do_checks = false);
 
  void visualizeHeightLinesOnImage(const std::vector<Line_collection>& height_lines, cv::Mat& img, const cv::Mat& P);
 

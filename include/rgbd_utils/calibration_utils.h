@@ -13,15 +13,25 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#include <limits>
+
 #include <pcl/common/transform.h>
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/visualization/cloud_viewer.h>
-
+#include <pcl/segmentation/extract_clusters.h>
+#include "pcl/ModelCoefficients.h"
+#include "pcl/io/pcd_io.h"
+#include "pcl/point_types.h"
+#include "pcl/sample_consensus/method_types.h"
+#include "pcl/sample_consensus/model_types.h"
+#include "pcl/segmentation/sac_segmentation.h"
+#include "pcl/filters/voxel_grid.h"
 
 
 void applyMaskInPlace(cv::Mat& mat, const cv::Mat mask);
 cv::Mat applyMask(cv::Mat& mat, const cv::Mat mask);
 
+void applyMaskOnCloudNaN(const cv::Mat& mask,const Cloud& cloud, Cloud& out);
 
 void heightVisualization(cv::Mat& img, const cv::Mat height, float z_min, float z_max, float color_height,const cv::Mat* mask = NULL);
 void waterVisualization(cv::Mat& img, const cv::Mat& water_depth, float min_water_depth, float max_water_depth,const cv::Mat* mask = NULL);
@@ -33,7 +43,7 @@ Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask
 void computeNormals(const Cloud& input, Cloud_n& with_normals);
 
 
-
+void getTriangles(const cv::Mat& img, std::vector<cv::Vec3i>& triangles);
 
 bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* mask = NULL, const float dist_threshold = 0.05, const int outlier_threshold = 100);
 
@@ -50,11 +60,10 @@ void add(pcl_Point& a,const pcl_Point& b);
 void div(pcl_Point& a, float d);
 pcl_Point sub(const pcl_Point& a,const pcl_Point& b);
 float dist(const pcl_Point& a,const pcl_Point& b);
-
 float dist_sq(const pcl_Point& a,const pcl_Point& b);
-
-
 float norm(const pcl_Point& p);
+
+
 pcl_Point setLength(const pcl_Point& p, float s);
 
 void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_axis,
@@ -100,6 +109,9 @@ cv::Point2f applyPerspectiveTrafo(const pcl_Point& p, const cv::Mat& P);
 void scaleCloud(const Cloud& pts, cv::Mat& U, Cloud& transformed);
 void scalePixels(const std::vector<cv::Point2f>& pxs,cv::Mat& T, std::vector<cv::Point2f>& transformed);
 
+bool detectPlane(const Cloud& scene, pcl::ModelCoefficients::Ptr& coefficients,  Cloud& plane, Cloud& rest, float dist_threshold, const Eigen::Vector3f* normal = NULL, const float* eps = NULL);
+void getClusters(const Cloud& scene, std::vector<pcl::PointIndices>& objects, float max_distance, int min_point_count = 0);
+void computeDistanceToPlane(Cloud& scene, const pcl::ModelCoefficients::Ptr& coefficients, cv::Mat& dists, cv::Mat* mask = NULL);
 
 // returns false if mean error after transformation is above max_dist
 bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved, Eigen::Affine3f& trafo, float max_dist = 0.05);

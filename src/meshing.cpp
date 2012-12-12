@@ -17,25 +17,27 @@ using namespace std;
 * @param p0 first point of triangle
 * @param p1 second point
 * @param p2 third point
-* @param max_length maximal length of edge
+* @param max_length square of maximal length of edge
 * @return true iff no edge of the triangle is longer than max_length
 */
-bool validTriangle(const pcl_Point& p0, const pcl_Point& p1, const pcl_Point& p2, float max_length){
+inline bool validTriangle(const pcl_Point& p0, const pcl_Point& p1, const pcl_Point& p2, float max_length_sq){
+
+ assert(1==0);
 
  if (p0.x != p0.x) return false;
  if (p1.x != p1.x) return false;
  if (p2.x != p2.x) return false;
 
- if (max_length < 0) return true;
+ if (max_length_sq < 0) return true;
 
  // ROS_INFO("p0: %f %f %f", p0.x,p0.y,p0.z);
  // ROS_INFO("p1: %f %f %f", p1.x,p1.y,p1.z);
  // ROS_INFO("p2: %f %f %f", p2.x,p2.y,p2.z);
  // cout << "dist(0,1): " << dist(p0,p1) << endl;
 
- if (dist(p0,p1) > max_length) return false;
- if (dist(p0,p2) > max_length) return false;
- if (dist(p1,p2) > max_length) return false;
+ if (dist_sq(p0,p1) > max_length_sq) return false;
+ if (dist_sq(p0,p2) > max_length_sq) return false;
+ if (dist_sq(p1,p2) > max_length_sq) return false;
 
  return true;
 }
@@ -49,7 +51,7 @@ bool validTriangle(const pcl_Point& p0, const pcl_Point& p1, const pcl_Point& p2
 * @return mesh simple mesh creation. Cloud is organized so that neighbours are well defined
 *
 */
-pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_length){
+pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_length, bool do_checks){
  pcl::PolygonMesh mesh;
 
 
@@ -63,32 +65,42 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_lengt
 
  pcl::Vertices vertices;
 
+ mesh.polygons.resize((cloud.width-1)*(cloud.height-1)*2);
+ uint polygon_pos = 0;
+
+ vertices.vertices.resize(3);
+
+ float max_length_sq = max_length*max_length;
 
  for (uint x = 0; x<cloud.width-1; ++x)
   for (uint y = 0; y<cloud.height-1; ++y){
 
-   vertices.vertices.clear();
-   vertices.vertices.push_back(y*width+x);
-   vertices.vertices.push_back((y+1)*width+x);
-   vertices.vertices.push_back(y*width+x+1);
+
+   vertices.vertices[0] = y*width+x;
+   vertices.vertices[1] = (y+1)*width+x;
+   vertices.vertices[2] = y*width+x+1;
+
+
 
    // check for nan in points and max length of lines
-   if (validTriangle(cloud.at(vertices.vertices[0]),cloud.at(vertices.vertices[1]),cloud.at(vertices.vertices[2]),max_length))
-    mesh.polygons.push_back(vertices);
+   if (!do_checks || validTriangle(cloud.at(vertices.vertices[0]),cloud.at(vertices.vertices[1]),cloud.at(vertices.vertices[2]), max_length_sq)){
+    assert(polygon_pos < mesh.polygons.size());
+    mesh.polygons[polygon_pos++] = vertices;
+   }
 
+   vertices.vertices[0] = y*width+x+1;
+   vertices.vertices[1] = (y+1)*width+x;
+   vertices.vertices[2] = (y+1)*width+x+1;
 
-   vertices.vertices.clear();
-
-   vertices.vertices.push_back(y*width+x+1);
-   vertices.vertices.push_back((y+1)*width+x);
-   vertices.vertices.push_back((y+1)*width+x+1);
-
-   if (validTriangle(cloud.at(vertices.vertices[0]),cloud.at(vertices.vertices[1]),cloud.at(vertices.vertices[2]),max_length))
-    mesh.polygons.push_back(vertices);
+   if (!do_checks || validTriangle(cloud.at(vertices.vertices[0]),cloud.at(vertices.vertices[1]),cloud.at(vertices.vertices[2]), max_length_sq)){
+    assert(polygon_pos < mesh.polygons.size());
+    mesh.polygons[polygon_pos++] = vertices;
+   }
 
   }
 
- // ROS_INFO("Mesh hast %zu triangles", mesh.polygons.size());
+ if (do_checks)
+  mesh.polygons.resize(mesh.polygons.size());
 
  return mesh;
 }
@@ -512,12 +524,12 @@ void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, std::vector<
 
   }
 
-//  if (current_lines.size() > 0){
-//   ROS_INFO("Found %zu Pointpairs for height %f", current_lines.size(), height);
-//   height_lines.push_back(current_lines);
-//  }else{
-//   // break;
-//  }
+  //  if (current_lines.size() > 0){
+  //   ROS_INFO("Found %zu Pointpairs for height %f", current_lines.size(), height);
+  //   height_lines.push_back(current_lines);
+  //  }else{
+  //   // break;
+  //  }
 
  }
 
