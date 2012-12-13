@@ -166,6 +166,8 @@ bool Surface_Modeler::saveAsObj_2(std::string filename){
     }
 
   }
+  
+  return true;
 }
 
 

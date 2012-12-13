@@ -155,7 +155,7 @@ void getClusters(const Cloud& scene, std::vector<pcl::PointIndices>& segments, f
   // find largest cluster in plane
   pcl::EuclideanClusterExtraction<pcl_Point> extractor;
 
-// TODO: cloud is ordered!
+  // TODO: cloud is ordered!
   pcl::KdTree<pcl_Point>::Ptr clusters_tree_ = boost::make_shared<pcl::KdTreeFLANN<pcl_Point> > ();  // CHANGED
 
 
@@ -172,15 +172,15 @@ void getClusters(const Cloud& scene, std::vector<pcl::PointIndices>& segments, f
 
   // ROS_INFO("extracted %zu segments", segments.size());
 
-//  objects.resize(segments.size());
+  //  objects.resize(segments.size());
 
-// // timing_start("cpy");
-//  for (uint i=0; i<segments.size(); ++i){
-//    int n = segments[i].indices.size();
-//    Cloud c; c.resize(n);
-//    for (int p=0; p>n; ++p){  c.points[p] = scene.points[segments[i].indices[p]]; }
-//    objects[i] = c;
-//  }
+  // // timing_start("cpy");
+  //  for (uint i=0; i<segments.size(); ++i){
+  //    int n = segments[i].indices.size();
+  //    Cloud c; c.resize(n);
+  //    for (int p=0; p>n; ++p){  c.points[p] = scene.points[segments[i].indices[p]]; }
+  //    objects[i] = c;
+  //  }
   //timing_end("cpy");
 
 }
@@ -194,7 +194,7 @@ void getClusters(const Cloud& scene, std::vector<pcl::PointIndices>& segments, f
 
 void computeDistanceToPlane(Cloud& scene, const pcl::ModelCoefficients::Ptr& coefficients, cv::Mat& dists, cv::Mat* mask){
 
-  assert(dists.rows == scene.height && dists.cols == scene.width);
+  assert(dists.rows == int(scene.height) && dists.cols == int(scene.width));
   assert(dists.type() == CV_32FC1);
   dists.setTo(0);
   if (mask) assert(mask->size() == dists.size());
@@ -258,14 +258,16 @@ bool detectPlane(const Cloud& scene, pcl::ModelCoefficients::Ptr& coefficients, 
 
   seg.setOptimizeCoefficients (true);
 
-  // look only for tables (no walls")
-  //  seg.setAxis(Eigen::Vector3f(0,0,1)); // upwards
-  //  seg.setEpsAngle(20/180.0*M_PI); // accept planes with not more than 20deg deviation from given axis
-
-
+  if (normal && eps) {
+    seg.setAxis(*normal);
+    seg.setEpsAngle(*eps);
+    seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
+  }else{
+    seg.setModelType (pcl::SACMODEL_PLANE);
+  }
 
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
-  seg.setModelType (pcl::SACMODEL_PLANE);
+
   seg.setMethodType (pcl::SAC_RANSAC);
   seg.setDistanceThreshold(dist_threshold); // max dist to be considered an inlier (in m)
 
