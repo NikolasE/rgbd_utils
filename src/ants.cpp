@@ -323,7 +323,7 @@ void Path_planner::computePolicy(cv::Point goal, float cell_size_m){
 
  graph_t g(&edges[0], &edges[0] + edges.size(), &edge_costs[0], num_nodes);
 
- ROS_INFO("Creaed graph");
+ ROS_INFO("Created graph");
 
  // computation of path
  std::vector<vertex_descriptor> p(num_vertices(g));

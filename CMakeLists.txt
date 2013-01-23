@@ -11,7 +11,7 @@ include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 #  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
 set(ROS_BUILD_TYPE Debug)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-unused-function -Wno-unused-but-set-variable")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-pragmas -Wno-deprecated -Wno-unused-function -Wno-unused-but-set-variable")
 
 rosbuild_init()
 
@@ -39,29 +39,40 @@ rosbuild_add_boost_directories()
 #target_link_libraries(example ${PROJECT_NAME})
 
 
+option(WITH_LIBGEOMETRY "Inclusion of LibGeometry")
+SET(LibGeometry_Base "/work/home/engelhan/code/libgeometry" CACHE FILEPATH "Location of LibGeometry")
+
 #add_definitions(-DWITH_LIBGEOMETRY)
 
-#if(DEFINED $WITH_LIBGEOMETRY)
-
-#MESSAGE(STATUS "Compiling WITH LibGeometry")
-
-# link to libgeometry for exmap-computation
-#set(GEO_FOLDER "/work/home/engelhan/code/libgeometry")
-#include_directories(${GEO_FOLDER})
-#include_directories(${GEO_FOLDER}/WildMagic4/SDK/Include)
-#file(GLOB includes ${GEO_FOLDER}/* )
-#include_directories( ${includes})
-#ELSE(DEFINED WITH_$LIBGEOMETRY)
-#MESSAGE(STATUS "Compiling WITHOUT LibGeometry")
-#ENDIF(DEFINED $WITH_LIBGEOMETRY)
+if (WITH_LIBGEOMETRY)
+add_definitions(-DWITH_LIBGEOMETRY)
+MESSAGE(STATUS "Compiling WITH LibGeometry at ${LibGeometry_Base}")
+include_directories(${LibGeometry_Base})
+include_directories(${LibGeometry_Base}/WildMagic4/SDK/Include)
+include_directories( ${includes})
+include_directories(${LibGeometry_Base}/Testing ${LibGeometry_Base}/mesh ${LibGeometry_Base}/base)
+include_directories(${LibGeometry_Base}/parameterization ${LibGeometry_Base}/geometry ${LibGeometry_Base}/pointset)
+include_directories(${LibGeometry_Base}/spatial)
 
 
+#file(GLOB includes ${GEO_FOLDER} )
 
-rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp src/exp_map.cpp)
+ELSE (WITH_LIBGEOMETRY)
+MESSAGE(STATUS "Compiling WITHOUT LibGeometry")
+ENDIF (WITH_LIBGEOMETRY)
+
+
+
+rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/cloud_gmm.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp)# src/ants.cpp src/exp_map.cpp)
 rosbuild_link_boost(rgbd_utils thread signals system)
 
-#target_link_libraries(rgbd_utils  ${GEO_FOLDER}/Testing/liblibGeometry.a ${GEO_FOLDER}/WildMagic4/SDK/Library/Release/libWm4Foundation.a )
+rosbuild_add_executable(gmm_test src/main_test.cpp src/cloud_gmm.cpp src/pinch_detection.cpp)
+target_link_libraries(gmm_test rgbd_utils)
 
+
+if (WITH_LIBGEOMETRY)
+target_link_libraries(rgbd_utils  ${LibGeometry_Base}/Testing/liblibGeometry.a ${LibGeometry_Base}/WildMagic4/SDK/Library/Release/libWm4Foundation.a )
+ENDIF (WITH_LIBGEOMETRY)
 
 
 #rosbuild_add_executable(boost_test src/ants.cpp)

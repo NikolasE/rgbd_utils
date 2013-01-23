@@ -17,10 +17,9 @@
 
 
 #ifdef WITH_LIBGEOMETRY
-
 #include "MeshObject.h" // libgeometry
-
 #endif
+
 
 
 typedef std::pair<int,cv::Point2f> uv_neighbour;
@@ -44,22 +43,18 @@ struct UV_Patch {
 
 class Surface_Modeler {
 
+
+
   float x_min_,x_max_, y_min_, y_max_;
   float cell_size_;
   int cell_cnt_x,cell_cnt_y;
 
-  float z_min, z_max;
+  double z_min, z_max;
 
 
   Cloud model_3d;
   bool model_3d_valid;
 
-  std::vector<std::vector<std::vector<float> > > dists;
-
-  cv::Mat mean;
-  cv::Mat variance;
-
-  uint training_data_cnt;
   bool model_computed;
 
   bool first_frame;
@@ -71,7 +66,7 @@ class Surface_Modeler {
 #ifdef WITH_LIBGEOMETRY
   void copyToMesh(rms::VFTriangleMesh& mesh);
 
-
+  bool exp_map_initialized;
   // storage for exp-Maps
   std::map<int,UV_Patch> expMaps;
 #endif
@@ -89,12 +84,24 @@ class Surface_Modeler {
   }
 
 
+
+//  void updateHeight_gaussian(const Cloud& cloud, float sigma_factor = -1);
+//  bool updateHeight_iterpolation(const Cloud& cloud, float max_dist = -1);
+
+
 public:
 
+  bool is_initialized;
+
+
+cv::Mat mean;
+
+
 #ifdef WITH_LIBGEOMETRY
+
+  bool isExpMapInitialized(){return exp_map_initialized;}
   // wrapper for expMap-Generator
   MeshObject expMapMeshObject;
-
 
   bool initExpMapGenerator();
   void writeExpMapCSV();
@@ -119,6 +126,10 @@ public:
   /// returns maximal height off all cells
   float getMaxHeight(){return z_max;}
 
+
+  /// size of one cell
+  float cell_size(){return cell_size_;}
+
   /// get minimal x-value of grid
   float min_x(){return x_min_;}
   /// get minimal y-value of grid
@@ -139,13 +150,11 @@ public:
   /** Updatefactor used in updateHeight @see updateHeight*/
   float weight;
 
-  bool updateHeight(const Cloud& cloud,  const float min_diff_m = -1);
+  bool updateHeight(const Cloud& cloud,  float min_diff_m = -1);
 
 
-  /**
-  * @return Number of training frames added so far
-  */
-  uint getTrainingCnt(){return training_data_cnt;}
+  void reset();
+
 
   /**
   * Initialization, sets weight to 0.1
@@ -155,26 +164,25 @@ public:
   */
   Surface_Modeler(){
     model_computed = false;
-    training_data_cnt = 0;
     weight = 0.1;
     model_3d_valid = false;
+#ifdef WITH_LIBGEOMETRY
+    exp_map_initialized = false;
+#endif
+    is_initialized = false;
     //  areaMask_computed = false;
   }
 
   bool computeModel();
 
-
   void init(float cell_size, const Cloud& cloud);
 
   void init(float cell_size, float x_min, float x_max, float y_min, float y_max);
 
-  int addTrainingFrame(const Cloud& cloud);
-
-  void reset();
 
   cv::Mat getFGMask(const Cloud& cloud, float max_dist, cv::Mat* areaMask = NULL);
 
-  void getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells = NULL, Cloud* fg_cloud = NULL);
+  // void getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells = NULL, Cloud* fg_cloud = NULL);
 
   Cloud & getModel();
 

@@ -51,11 +51,19 @@ bool isSimilar(const cv::Mat& depth_1, const cv::Mat& depth_2, const cv::Mat* ma
 Cloud applyMask(const Cloud& current, const cv::Mat& mask);
 
 
+
+
+pcl_Point getTransformedPoint(pcl_Point p, const Eigen::Affine3f& trafo);
+
+cv::Mat visualizeMask(const cv::Mat& img, const cv::Mat& mask);
+
 Cloud computeMean(const std::vector<Cloud>& clouds);
 
 Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std::vector<cv::Point2i>* valids = NULL);
 
 
+float dist(const cv::Point& a, const cv::Point& b);
+cv::Point2f mean(const cv::Point& a, const cv::Point& b);
 void add(pcl_Point& a,const pcl_Point& b);
 void div(pcl_Point& a, float d);
 pcl_Point sub(const pcl_Point& a,const pcl_Point& b);

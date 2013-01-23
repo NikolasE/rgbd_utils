@@ -12,6 +12,32 @@
 
 using namespace std;
 
+
+
+
+pcl_Point getTransformedPoint(pcl_Point p, const Eigen::Affine3f& trafo){
+  Cloud c; c.push_back(p);
+  pcl::getTransformedPointCloud(c,trafo,c);
+  return c[0];
+}
+
+
+float dist(const cv::Point& a, const cv::Point& b){
+  return sqrt(pow(a.x-b.x,2)+pow(a.y-b.y,2));
+}
+
+
+cv::Point2f mean(const cv::Point& a, const cv::Point& b){
+  cv::Point2f res;
+  res.x = (a.x+b.x)/2;
+  res.y = (a.y+b.y)/2;
+
+  return res;
+}
+
+
+
+
 /**
 *
 * @param a
@@ -48,12 +74,12 @@ void div(pcl_Point& a, float d){
 
 
 /**
-*
 * @param p input point
 * @return norm of p
 */
-/// result = |p|
+/// result = |p| or =1 if p contains nan
 float norm(const pcl_Point& p){
+  if (p.x != p.x) return -1;
   return sqrt(p.x*p.x+p.y*p.y+p.z*p.z);
 }
 
@@ -727,6 +753,20 @@ void applyMaskOnCloud(const cv::Mat& mask, const Cloud& in, Cloud& out){
     }
 
 }
+
+
+
+cv::Mat visualizeMask(const cv::Mat& img, const cv::Mat& mask){
+  assert(mask.type() == CV_8UC1);
+
+  cv::Mat result;
+  img.copyTo(result);
+  cv::Mat darker = 0.5*img;
+  darker.copyTo(result,255-mask);
+
+  return result;
+}
+
 
 
 /**

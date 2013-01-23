@@ -40,9 +40,6 @@ void Surface_Modeler::writeExpMapCSV(){
     rms::Frame3f vSeedFrame(vVertex, vNormal);
 
 
-    //vVertex.X() = 0;
-
-
     gen->SetSurfaceDistances( vVertex, 0.0f, 0.05, &vSeedFrame);
 
 
@@ -124,6 +121,8 @@ bool Surface_Modeler::initExpMapGenerator(){
   //  ROS_INFO("second expmap: %f ms", (ros::Time::now()-start_init).toSec()*1000.0);
 
   ROS_INFO("Moving mesh to expMap: %f ms", (ros::Time::now()-start).toSec()*1000.0);
+
+  exp_map_initialized = true;
 
   return true;
 }
@@ -265,5 +264,5 @@ UV_Patch Surface_Modeler::getPatchAround(cv::Point grid_pos, float dist){
   return patch;
 }
 
-
+// Lib_geometry defined
 #endif

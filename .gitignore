@@ -14,3 +14,15 @@ resources/images.qrc.depends
 *.*~
 lib/
 ROS_NOBUILD
+.c*
+CMakeF*
+*.user
+*.*~
+*~
+*.txt
+*.png
+*.jpg
+*.cxx
+*.cbp
+ui_main_window.h
+docu

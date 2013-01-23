@@ -9,7 +9,6 @@
 #define CLOUD_PROCESSING_H_
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
-// PCL specific includes
 #include <pcl/ros/conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -20,13 +19,11 @@
 
 #include <opencv/cv.h>
 
-
 typedef pcl::PointXYZRGB pcl_Point;
 typedef pcl::PointCloud<pcl_Point> Cloud;
 
 typedef pcl::Normal pcl_Normal;
 typedef pcl::PointCloud<pcl_Normal> Cloud_n;
-
 
 #include <sys/time.h>
 #include <stdio.h>
@@ -39,6 +36,13 @@ typedef pcl::PointCloud<pcl_Normal> Cloud_n;
 typedef std::pair<timeval,timeval> Timer_;
 
 static std::map<std::string, Timer_> clocks;
+
+//static std::map<std::string, std::vector<long> > statistics;
+
+
+
+
+
 
 
 static void timing_start(const std::string& name ){
@@ -77,14 +81,14 @@ static void timing_print(const std::string& name){
 
 
 
-static bool timing_end(const std::string& name, bool quiet = false){
+static long timing_end(const std::string& name, bool quiet = false){
 
   timeval time;
   gettimeofday(&time,NULL);
 
   if (clocks.find(name) == clocks.end()){
     std::cerr << "no started timer with name " << name << std::endl;
-    return false;
+    return -1;
   }
 
   Timer_ timer = clocks[name];
@@ -95,7 +99,7 @@ static bool timing_end(const std::string& name, bool quiet = false){
    timing_print(name);
 
 
-  return true;
+  return msBetween(name);
 }
 
 
