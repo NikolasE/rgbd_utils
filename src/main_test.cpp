@@ -1,16 +1,16 @@
 using namespace std;
 #include <iostream>
-#include "rgbd_utils/cloud_gmm.h"
+#include "rgbd_utils/gaussian_model.h"
 #include <opencv-2.3.1/opencv2/highgui/highgui.hpp>
 #include "rgbd_utils/pinch_detection.h"
+#include "rgbd_utils/ants.h"
 
 
-PixelEnvironmentModel model;
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat foreground,foreground_prob, stable, inited;
 
 int frame_cnt = 0;
-ros::Publisher pub_model;
+ros::Publisher pub_model, pub_hand;
 cv::Mat rgb_image;
 
 float error_factor;
@@ -18,10 +18,12 @@ int tb_val = 15;
 int tb_val_2 = 0;
 float sigma_cnt;
 cv::Mat user_mask;
-cv::Mat dists;
+cv::Mat dists,last_static_dists,dist_thres;
 cv::Mat sigmas;
 
-Detector detector;
+cv::Mat last_static_norm, current_norm;
+
+
 Eigen::Affine3f kinect_trafo;
 
 int frame_check_cnt = 0;
@@ -32,6 +34,14 @@ bool kinect_trafo_valid;
 bool eval_running;
 
 std::vector<cv::Point2i> points;
+
+
+PixelEnvironmentModel model;
+Detector detector;
+Object_tracker<Grasp,Track<Grasp> > grasp_tracker;
+Object_tracker<Playing_Piece,Track<Playing_Piece> > piece_tracker;
+Object_tracker<Fingertip,Track<Fingertip> > fingertip_tracker;
+
 
 
 void ImgCB(const sensor_msgs::ImageConstPtr& img_ptr){
@@ -48,7 +58,7 @@ void ImgCB(const sensor_msgs::ImageConstPtr& img_ptr){
 
 void on_trackbar( int, void* ){
   error_factor = tb_val / 1000.0;
-  ROS_INFO("error_factor: %f",error_factor);
+  // ROS_INFO("error_factor: %f",error_factor);
 }
 
 void on_trackbar2( int val, void* ){
@@ -68,26 +78,22 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
 
   frame_cnt++;
 
-  Cloud current;
-  pcl::fromROSMsg(*cloud_ptr, current);
+  Cloud current_cloud;
+  pcl::fromROSMsg(*cloud_ptr, current_cloud);
 
 
   int training_cnt = 100;
 
   if (frame_cnt < training_cnt){
-    model.update(current);
+    model.update(current_cloud);
     return;
   }
 
   if (frame_cnt == training_cnt){
 
-    //    model.getSigmas(sigmas,true);
-    //    cv::namedWindow("sigmas");
-    //    cv::imshow("sigmas",sigmas);
-
     if (pub_model.getNumSubscribers() > 0){
       Cloud result;
-      model.getCloudRepresentation(current,result,1);
+      model.getCloudRepresentation(current_cloud,result,1);
 
       Cloud::Ptr msg = result.makeShared();
       msg->header.frame_id = "/openni_rgb_optical_frame";
@@ -95,14 +101,14 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
       pub_model.publish(msg);
       // ROS_INFO("sending %zu points",result.size());
     }
+
   }
 
 
-  // model.update(current);
+  // timing_start("frame"); // 15ms
 
-  // model.getStableMeasurements(stable);
-
-  model.getForeground_dist(current,error_factor,foreground);
+  model.getForeground_dist(current_cloud,error_factor,foreground);
+  model.getNorm(current_cloud,current_norm);
 
   //  model.getInitialized(inited);
   //  cv::imshow("inited",inited);
@@ -115,67 +121,97 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
   //  cv::imshow("vars",sigmas);
 
 
+  //  timing_start("foo");
+  //  if (kinect_trafo_valid)
+  //    pcl::getTransformedPointCloud(current,kinect_trafo,current);
+  //  timing_end("foo");
+
+
   if (detector.detectionAreaSet()){
-    detector.newFrame(foreground);
-
-
+    detector.newFrame(foreground,current_norm,&current_cloud);
     detector.analyseScene(&rgb_image);
-
-    // ROS_INFO("Found %zu grasps and %zu objects", grasp_detector.grasp_detections.size(),grasp_detector.object_detections.size());
-
-    //    grasp_detector.detectGrasps(&rgb_image);
-    //    grasp_detector.detectPointingGesture(dists,&rgb_image);
+//    detector.analyseScene();
+    //detector.showDetectionAreaEdge(rgb_image);
+  }
 
 
-    if (eval_running){
-      uint n = detector.object_detections.size();
+//  cout << "XXX Detections: " << endl;
+//  cout << "Grasps: " << detector.grasp_detections.size() << endl;
+//  cout << "Objets: " << detector.object_detections.size() << endl;
+//  cout << "Fingertips: " << detector.finger_detections.size() << endl;
 
-      if (n<2){
-        frame_check_cnt++;
-        found_object_cnt+=n;
-      }
+//  cout << "OOO Tracks: " << endl;
 
-      ROS_INFO("looking for objects: %i / %i",found_object_cnt,frame_check_cnt);
+//  cout << "Grasp: " << grasp_tracker.tracks.size() << endl;
+//  cout << "Objects: " << piece_tracker.tracks.size() << endl;
+//  cout << "Fingertips: " << fingertip_tracker.tracks.size() << endl;
 
-      if (frame_check_cnt == 100){
-        eval_running = false;
-        on_trackbar2(0,NULL);
-      }
+
+  grasp_tracker.update_tracks(detector.grasp_detections);
+  fingertip_tracker.update_tracks(detector.finger_detections);
+  if ( !detector.handVisibleInLastFrame()){ // only update objects if hand was not visible (since objects could be occluded)
+    piece_tracker.update_tracks(detector.object_detections);
+  }
+
+
+  // timing_end("frame");
+
+
+  // visualize tracks
+  Cloud grasps;
+  for (GraspTrack_it it = grasp_tracker.tracks.begin(); it != grasp_tracker.tracks.end(); ++it){
+    if (it->second.state == Track_Active){
+      it->second.visualizeOnImage(rgb_image,getColor(it->first));
+      pcl_Point center = it->second.last_detection().position_world;
+      grasps.push_back(center);
+      // ROS_INFO("Found grasp at: %f %f %f", center.x,center.y, center.z);
+
+      // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
+
+      float angle;
+      it->second.last_detection().getAngle_PCA_2D(angle);
+      //ROS_INFO("Angle: %f", angle);
+
+//      cout << angle << endl;
+
+      Eigen::Affine3f trafo;
+      it->second.last_detection().getAngle_PCA_3D(current_cloud,angle,&trafo);
+
 
     }
+  }
 
 
-    printTrafo(kinect_trafo);
+  if (pub_hand.getNumSubscribers()){
+    ROS_INFO("SENDING MAKRER");
+    Cloud::Ptr msg = grasps.makeShared();
+    msg->header = cloud_ptr->header;
+    pub_hand.publish(msg);
+  }
 
 
-    // get position of every grasp:
-    for(uint i=0; i<detector.grasp_detections.size(); ++i){
-      pcl_Point mean = getCenter(detector.grasp_detections[i].edge,current);
-
-
-      ROS_INFO("mean (no trafo) %i: %f %f %f",i,mean.x,mean.y,mean.z);
-
-
-      if (kinect_trafo_valid){
-        mean = getTransformedPoint(mean, kinect_trafo);
-        detector.grasp_detections[i].position = mean;
-      }
-
-      ROS_INFO("mean %i: %f %f %f",i,mean.x,mean.y,mean.z);
+  for (PieceTrack_it it = piece_tracker.tracks.begin(); it != piece_tracker.tracks.end(); ++it){
+    if (it->second.state == Track_Active){
+      it->second.visualizeOnImage(rgb_image,getColor(it->first));
+      pcl_Point center = it->second.last_detection().position_world;
+      // ROS_INFO("Found Piece (%i) at: %f %f %f", it->first, center.x,center.y, center.z);
+      // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
     }
+  }
 
 
-    detector.showDetectionAreaEdge(rgb_image);
-
-    cv::namedWindow("detections");
-    cv::imshow("detections",rgb_image);
-
+  for (FingerTrack_it it = fingertip_tracker.tracks.begin(); it != fingertip_tracker.tracks.end(); ++it){
+    // if (it->second.state == Track_Active)
+    it->second.visualizeOnImage(rgb_image,getColor(it->first),TT_FINGERTIP);
+    pcl_Point center = it->second.last_detection().position_world;
+    // ROS_INFO("Found finger at: %f %f %f", center.x,center.y, center.z);
+    // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
   }
 
 
 
-
-
+  cv::namedWindow("detections");
+  cv::imshow("detections",rgb_image);
 
 
 
@@ -186,9 +222,6 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
   // 2.5% fuer 2 sigma
   // 0.4% fuer 3 sigma
   //ROS_INFO("found %i nonzero pixels (%.1f %%)",nonzero,nonzero*100.0/current.size());
-
-  //  cv::erode(foreground_prob,foreground_prob,cv::Mat(),cv::Point(-1,-1),2);
-  //  cv::dilate(foreground_prob,foreground_prob,cv::Mat(),cv::Point(-1,-1),2);
 
 
   cv::imshow("foreground",foreground);
@@ -243,6 +276,9 @@ int main(int argc, char ** argv){
 
   //cv::namedWindow("vars");
 
+//  cv::namedWindow("dist");
+//  cv::namedWindow("dist_thres");
+
   cv::createTrackbar( "foreground", "foreground", &tb_val, 200, on_trackbar );
   cv::createTrackbar( "check", "foreground", &tb_val_2, 1, on_trackbar2 );
   on_trackbar(tb_val,NULL);
@@ -250,6 +286,9 @@ int main(int argc, char ** argv){
 
 
   pub_model = nh.advertise<Cloud>("model", 1);
+  pub_hand = nh.advertise<Cloud>("grasps", 1);
+
+
   ros::Subscriber sub_cam_info = nh.subscribe("/camera/rgb/points", 1, CloudCB);
   ros::Subscriber sub_color = nh.subscribe("/camera/rgb/image_color", 1, ImgCB);
 
@@ -260,10 +299,9 @@ int main(int argc, char ** argv){
 
   if (!kinect_trafo_valid){
     ROS_INFO("No Kinect trafo");
-    // return -1;
+  }else{
+  detector.setTransformation(kinect_trafo);
   }
-
-
 
 
   model.init(640,480,10);
@@ -275,7 +313,7 @@ int main(int argc, char ** argv){
 
   if (user_mask.cols > 0){
 
-    ROS_INFO("mask has %i pixels",cv::countNonZero(user_mask));
+    // ROS_INFO("mask has %i pixels",cv::countNonZero(user_mask));
 
     detector.setDetectionArea(user_mask);
     model.setMask(user_mask);

@@ -10,8 +10,35 @@
 
 using namespace std;
 
+/// lock all cells on which the marker points in the cloud are projected into
+void Elevation_map::lockCells(const cv::Mat & mask, const Cloud& current){
 
-cv::Mat Surface_Modeler::getFGMask(const Cloud& cloud, float max_dist, cv::Mat* areaMask){
+  if (locked.cols != mean.cols || locked.rows !=mean.rows || locked.type() == CV_8UC1){
+    locked = cv::Mat(mean.cols,mean.rows, CV_8UC1);
+  }
+
+  locked.setTo(0);
+
+  assert(mask.cols == int(current.width) && mask.rows == int(current.height));
+
+  for (int x=0; x<mask.cols; ++x)
+    for (int y=0; y<mask.rows; ++y){
+      if (mask.at<uchar>(y,x) == 0) continue;
+      cv::Point pos = grid_pos(current.at(x,y));
+      if (pos.x < 0) continue;
+
+      locked.at<uchar>(pos.y,pos.x) = 255;
+    }
+
+  locking_active = true;
+
+  cv::namedWindow("blocked");
+  cv::imshow("blocked",locked);
+
+}
+
+
+cv::Mat Elevation_map::getFGMask(const Cloud& cloud, float max_dist, cv::Mat* areaMask){
 
   cv::Mat res(cloud.height, cloud.width, CV_8UC1);
   res.setTo(0);
@@ -57,12 +84,7 @@ cv::Mat Surface_Modeler::getFGMask(const Cloud& cloud, float max_dist, cv::Mat* 
 }
 
 
-
-
-
-
-
-bool Surface_Modeler::saveAsObj_2(std::string filename){
+bool Elevation_map::saveAsObj_2(std::string filename){
   Cloud model = getModel();
   std::ofstream off(filename.c_str());
 
@@ -157,7 +179,7 @@ void Surface_Modeler::copyToMesh(rms::VFTriangleMesh& mesh){
 * @return
 */
 /// Save model in .obj-Format with normals
-bool Surface_Modeler::saveAsObj(std::string filename, bool ignore_triangles_without_normals){
+bool Elevation_map::saveAsObj(std::string filename, bool ignore_triangles_without_normals){
 
   Cloud model = getModel();
 
@@ -313,7 +335,7 @@ bool Surface_Modeler::saveAsObj(std::string filename, bool ignore_triangles_with
 
 
 
-void Surface_Modeler::reset(){
+void Elevation_map::reset(){
   mean.setTo(0);
   model_3d_valid = false;
 }
@@ -328,9 +350,11 @@ void Surface_Modeler::reset(){
 * @todo (speedup) combine with getFGMask
 *
 */
-bool Surface_Modeler::updateHeight(const Cloud& cloud, float min_diff_m){
+bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
 
   bool min_diff_active = min_diff_m > 0;
+
+  update_count++;
 
 
   hits.setTo(0);
@@ -344,6 +368,10 @@ bool Surface_Modeler::updateHeight(const Cloud& cloud, float min_diff_m){
 
     if (pos.x < 0) continue;
     assert(0 <= pos.y && 0 <= pos.x && pos.y < cell_cnt_y && pos.x < cell_cnt_x);
+
+    if (locking_active && locked.at<uchar>(pos.y,pos.x) > 0)
+      continue;
+
 
     height_sum.at<float>(pos.y,pos.x) += p.z;
     hits.at<float>(pos.y,pos.x)++;
@@ -396,7 +424,8 @@ bool Surface_Modeler::updateHeight(const Cloud& cloud, float min_diff_m){
   model_3d_valid = false;// therefore, the old 3d-model is not longer valid and will be recreated on demand
 
   //small blur to smooth heightfield
-  cv::GaussianBlur(mean, mean, cv::Size(3,3),2,2);
+  if (!locking_active)
+    cv::GaussianBlur(mean, mean, cv::Size(3,3),2,2);
 
   // due to measurement errors, some pixels have a high error. If a hand is visible in the image,
   // more than 500 Pixels are counted.
@@ -411,7 +440,7 @@ bool Surface_Modeler::updateHeight(const Cloud& cloud, float min_diff_m){
 * @param x 3D  measurement point, intrepreted as (x,y,0)
 * @return corresponding bin coordinates (negative if point is not within grid)
 */
-cv::Point Surface_Modeler::grid_pos(float x, float y){
+cv::Point Elevation_map::grid_pos(float x, float y){
   pcl_Point p;
   p.x = x; p.y = y; p.z = 0;
   return grid_pos(p);
@@ -422,7 +451,7 @@ cv::Point Surface_Modeler::grid_pos(float x, float y){
 * @param p measurement point
 * @return corresponding bin coordinates (negative if point is not within grid)
 */
-cv::Point Surface_Modeler::grid_pos(const pcl_Point& p){
+cv::Point Elevation_map::grid_pos(const pcl_Point& p){
 
   cv::Point pos;
   pos.x = pos.y = -1;
@@ -450,7 +479,7 @@ cv::Point Surface_Modeler::grid_pos(const pcl_Point& p){
 * @param cell_size length of grid cell in m
 * @param cloud first cloud. size of grid is set so that all points have a minimum distance of 5cm to the border of the grid.
 */
-void Surface_Modeler::init(float cell_size, const Cloud& cloud){
+void Elevation_map::init(float cell_size, const Cloud& cloud){
 
   // pcl::getMinMax3d();
 
@@ -480,14 +509,42 @@ void Surface_Modeler::init(float cell_size, const Cloud& cloud){
 }
 
 
+
+void Elevation_map::getModel(Cloud& model){
+  model.clear();
+  pcl_Point p;
+  model.resize(cell_cnt_y*cell_cnt_x);
+
+  int pos = 0;
+  for (int y = 0; y < cell_cnt_y; ++y){
+    p.y = y_min_+(y+0.5)*cell_size_;
+    for (int x = 0; x < cell_cnt_x; ++x)
+      {
+        p.x = x_min_+(x+0.5)*cell_size_;
+        p.z = mean.at<float>(y,x);
+//        model.push_back(p);
+        model[pos++] = p;
+      }
+  }
+
+  model.width = cell_cnt_x;
+  model.height = cell_cnt_y;
+
+  if (int(model.size()) != cell_cnt_x*cell_cnt_y){
+    ROS_INFO("size: %zu, %i % i", model.size(),cell_cnt_x,cell_cnt_y);
+    assert(int(model.size()) == cell_cnt_x*cell_cnt_y);
+  }
+}
+
+
 /**
 * Each cell is represented as a point in the middle of the cell and the z-value of the mean of the added training points.
 *  The model has to be computed befor this function is called.
 *
 * @return Model as organized cloud
-* @see computeModel, addTrainingFrame
+* @see updateHeight
 */
-Cloud & Surface_Modeler::getModel(){
+Cloud  Elevation_map::getModel(){
 
   if (!model_computed){
     model_3d.clear();
@@ -500,24 +557,34 @@ Cloud & Surface_Modeler::getModel(){
 
   model_3d.clear();
   /// @todo use old storage
-  model_3d.reserve(cell_cnt_y*cell_cnt_x);
+  //model_3d.reserve(cell_cnt_y*cell_cnt_x);
+  model_3d.clear();
 
-  for (int y = 0; y<cell_cnt_y; ++y)
-    for (int x = 0; x<cell_cnt_x; ++x)
+  pcl_Point p;
+
+  assert(model_3d.size() == 0);
+
+  for (int y = 0; y < cell_cnt_y; ++y){
+    p.y = y_min_+(y+0.5)*cell_size_;
+
+    // assert(model_3d.size() == y*cell_cnt_x);
+    for (int x = 0; x < cell_cnt_x; ++x)
       {
-        pcl_Point p;
-
-        float m = mean.at<float>(y,x);
-
-        p.x = x_min_+(x+0.5)*cell_size_;
-        p.y = y_min_+(y+0.5)*cell_size_;
-        p.z = m;
-
+        // ROS_INFO("y: %i x: %i, size: %zu",y,x,model_3d.size());
+        p.x = x_min_+(x+0.5)*cell_size_; 
+        p.z = mean.at<float>(y,x);
         model_3d.push_back(p);
       }
+  }
+
+  model_3d_valid = true;
+
+  //ROS_INFO("Size: %zu, cnt: %i %i", model_3d.size(),cell_cnt_x, cell_cnt_y);
 
   model_3d.width = cell_cnt_x;
   model_3d.height = cell_cnt_y;
+
+  // assert(model_3d.size() == cell_cnt_x*cell_cnt_y);
   return model_3d;
 
 }
@@ -533,7 +600,7 @@ Cloud & Surface_Modeler::getModel(){
 * @param y_min smallest y-value that is within the grid
 * @param y_max largest y-value that is within the grid
 */
-void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_min, float y_max){
+void Elevation_map::init(float cell_size, float x_min, float x_max, float y_min, float y_max){
 
   x_min_ = x_min; x_max_ = x_max; y_min_ = y_min; y_max_ = y_max;
   cell_size_ = cell_size;
@@ -547,8 +614,6 @@ void Surface_Modeler::init(float cell_size, float x_min, float x_max, float y_mi
 
   height_sum  = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
   hits  = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
-
-
 
   model_computed = false;
   first_frame = true;

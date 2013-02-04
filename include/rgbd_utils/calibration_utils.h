@@ -26,6 +26,12 @@
 #include "pcl/sample_consensus/model_types.h"
 #include "pcl/segmentation/sac_segmentation.h"
 #include "pcl/filters/voxel_grid.h"
+#include <tf/transform_broadcaster.h>
+
+
+
+
+void sendTrafo(const std::string& start_frame, const std::string& goal_frame, const Eigen::Affine3f& trafo );
 
 
 void applyMaskInPlace(cv::Mat& mat, const cv::Mat mask);
@@ -72,6 +78,8 @@ float dist_sq(const pcl_Point& a,const pcl_Point& b);
 float norm(const pcl_Point& p);
 
 
+cv::Scalar getColor(int i);
+
 pcl_Point setLength(const pcl_Point& p, float s);
 
 void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_axis,
@@ -87,6 +95,9 @@ void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out
 
 
 void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height = 0.1);
+
+void ensureSizeAndType(cv::Mat& img, int cols, int rows, int type);
+void ensureSizeAndType(cv::Mat& img, const cv::Mat& model);
 
 
 Cloud createCloud(const cv::Mat& depth, float fx, float fy, float cx, float cy);
@@ -125,6 +136,10 @@ void computeDistanceToPlane(Cloud& scene, const pcl::ModelCoefficients::Ptr& coe
 bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved, Eigen::Affine3f& trafo, float max_dist = 0.05);
 
 
+void markMask(const cv::Mat& mask, cv::Mat img);
+
+
+
 /**
 * Compute center of pointcloud as column-vector
 * if out!=NULL it contains the demeaned pointcloud
@@ -132,6 +147,9 @@ bool computeTransformationFromPointclouds(const Cloud& fixed, const Cloud& moved
 *
 */
 void centerPointCloud(const Cloud& in, cv::Mat& mean, Cloud* out = NULL);
+
+
+pcl_Point getCenter(const std::vector<cv::Point>& pts, Cloud* cloud,  bool* valid = false);
 
 
 bool saveAffineTrafo(const Eigen::Affine3f& M, const char* filename);

@@ -7,7 +7,7 @@
 
 
 
-#include "rgbd_utils/cloud_gmm.h"
+#include "rgbd_utils/gaussian_model.h"
 
 using namespace std;
 
@@ -139,6 +139,8 @@ void RunningGaussian::update(double new_x){
 
 void PixelEnvironmentModel::init(int width, int height, int queue_length){
 
+  update_cnt = 0;
+
   gaussians.clear();
 
   vector<RunningGaussian> line;
@@ -178,6 +180,8 @@ void PixelEnvironmentModel::update(int x,int y,float value){
 */
 void PixelEnvironmentModel::update(const Cloud& cloud, cv::Mat* frame_mask){
   assert(int(cloud.width) == width_ && int(cloud.height) == height_);
+
+  update_cnt++;
 
   for (int y=0; y<height_; ++y)
     for (int x=0; x<width_; ++x){
@@ -246,13 +250,34 @@ void PixelEnvironmentModel::getSigmas(cv::Mat& vars, bool normalize){
 
 }
 
+void PixelEnvironmentModel::getNorm(const Cloud& current, cv::Mat& norms){
+  if (norms.rows != height_ || norms.cols != width_ || norms.type() != CV_32FC1){
+    norms = cv::Mat(height_,width_,CV_32FC1);
+  }
+
+  norms.setTo(0);
+
+  for (int y=0; y<height_; ++y)
+    for (int x=0; x<width_; ++x){
+      // ROS_INFO("x,y: %i %i",x,y);
+      if (mask_set && mask_.at<uchar>(y,x) == 0) continue;
+
+      if (!gaussians[y][x].initialized) continue;
+
+      float d = norm(current.at(x,y));
+
+      if (d < 0) continue; // nan point
+
+      norms.at<float>(y,x) = d;
+    }
+}
+
+
 
 void PixelEnvironmentModel::getDistance(const Cloud& current, cv::Mat& dists){
   if (dists.rows != height_ || dists.cols != width_ || dists.type() != CV_32FC1){
     dists = cv::Mat(height_,width_,CV_32FC1);
   }
-
-  assert(1==0);
 
   dists.setTo(-100);
 
@@ -267,7 +292,7 @@ void PixelEnvironmentModel::getDistance(const Cloud& current, cv::Mat& dists){
 
       if (d < 0) continue; // nan point
 
-      dists.at<float>(y,x) = (d-gaussians[y][x].mean);
+      dists.at<float>(y,x) = (gaussians[y][x].mean-d);
     }
 
 
@@ -300,14 +325,12 @@ void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dis
     }
 
 
-  cv::medianBlur(foreground,foreground,3);
+  //cv::medianBlur(foreground,foreground,3);
 
-  //    cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
-  //    cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
+//  cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
+//  cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
 
 }
-
-
 
 
 bool RunningGaussian::isStableMeasurement(){
@@ -315,9 +338,6 @@ bool RunningGaussian::isStableMeasurement(){
   double sig = sigma();
   return sig < 0.0075*mean*mean;
 }
-
-
-
 
 /// point is foreground if it is not within N sigma
 void PixelEnvironmentModel::getForeground_prob(const Cloud& cloud, float N, cv::Mat& foreground){
@@ -342,18 +362,14 @@ void PixelEnvironmentModel::getForeground_prob(const Cloud& cloud, float N, cv::
 
   cv::medianBlur(foreground,foreground,3);
 
-//  cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
-//  cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
+  //  cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
+  //  cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
 
 }
 
 
-
-
-
-
 void PixelEnvironmentModel::setMask(const cv::Mat& mask){
-  assert(mask.cols == width_ && mask.rows == height_ && mask.type() == CV_8UC1);
+  assert(mask.type() == CV_8UC1);
   mask.copyTo(mask_);
   mask_set = true;
 }

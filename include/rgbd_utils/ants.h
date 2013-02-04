@@ -13,16 +13,26 @@
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
-
+#include <visualization_msgs/Marker.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <ros/ros.h>
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <ros/publisher.h>
+#include <ros/node_handle.h>
+
+#include <pcl_ros/point_cloud.h>
+
 typedef boost::adjacency_list < boost::listS, boost::vecS, boost::directedS, boost::no_property, boost::property < boost::edge_weight_t, float > > graph_t;
 typedef boost::graph_traits < graph_t >::vertex_descriptor vertex_descriptor;
 typedef boost::graph_traits < graph_t >::edge_descriptor edge_descriptor;
 typedef std::pair<int, int> Edge;
+
+typedef pcl::PointXYZRGB pcl_Point;
+typedef pcl::PointCloud<pcl_Point> Cloud;
 
 
 
@@ -44,6 +54,11 @@ typedef std::pair<float, EDGE_TYPE> Edge_info;
 
 typedef std::map<Edge, Edge_info,Edge_cmp> Edge_map;
 
+
+struct Enemy {
+  float strength;
+  int x,y;
+};
 
 
 class Path_planner {
@@ -91,9 +106,8 @@ class Path_planner {
  float cost_height(float current, float neighbour);
  float cost_hillside(int x, int y);
 
+ bool with_water;
 
-
- bool apply_smoothing;
 
 
  float hillside_cost_factor, path_length_factor;
@@ -102,8 +116,22 @@ class Path_planner {
  std::vector<cv::Vec3b> path_colors;
  std::vector<Edge_info> used_edges;
 
+ std::vector<Enemy> enemies;
+ cv::Mat enemy_cost;
+
 public:
 
+ float enemy_factor;
+
+ void addEnemy(float strength, int radius, int x, int y);
+
+ void removeEnemies(){
+   enemies.clear();
+   enemy_cost.setTo(0);
+ }
+
+
+ bool apply_smoothing;
 
  bool policy_computed;
 
@@ -114,33 +142,46 @@ public:
   allowed_water_depth = 0.001;
   untraversable_cost = 100000;
   policy_computed = false;
+  apply_smoothing = false;
+  with_water = false;
+
+
+  max_angle_deg = 45;
+  height_cost_factor = 1;
+  hillside_cost_factor = 1;
+  uphill_factor = 1;
+  path_length_factor = 1;
+  enemy_factor = 1;
  }
 
  /**
  * @param height height map as CV_32FC1 image
  */
- void setHeightMap(const cv::Mat& height){
+ void setHeightMap(const cv::Mat& height, float cell_size_m = 1){
   assert(height.type() == CV_32FC1);
   height.copyTo(height_map);
   policy_computed = false;
+  cell_size_m_ = cell_size_m;
+
+  enemy_cost = cv::Mat(height.size(),CV_32FC1);
+  enemy_cost.setTo(0);
+
+  model = createModel();
  }
 
  /**
- * @param depth depth map as CV_64FC1 image
+ * @param depth depth map as CV_32FC1 image
  */
  void setWaterDepthMap(const cv::Mat& depth){
-  assert(depth.type() == CV_64FC1);
+  assert(depth.type() == CV_32FC1);
   depth.copyTo(water_map);
   policy_computed = false;
+  with_water = true;
  }
 
+ Cloud model;
 
-
- /// returns pointer to the path
- std::vector<cv::Point> getPath(){return path;}
- std::vector<cv::Vec3b> getPathColor(){return path_colors;}
- std::vector<Edge_info> getPathEdges(){return used_edges;}
-
+ float cell_size_m_;
 
  Edge_map getEdgeInformation(){return edge_map;}
 
@@ -166,10 +207,9 @@ public:
 
  /**
  * @param goal   goal position withing height map to which the routes are computed
- * @param cell_size_m  edge_length in m of a cell
  */
  /// Computation of a policy for the whole heightmap towards the goal point
- void computePolicy(cv::Point goal, float cell_size_m = 1);
+ void computePolicy(cv::Point goal);
 
  cv::Mat getPolicy(){ return policy; }
 
@@ -180,9 +220,48 @@ public:
  /// Path from the start-position to the goal position is printed
  bool computePath(cv::Point start);
 
+ /// returns pointer to the path
+ std::vector<cv::Point> getPath(){return path;}
+ std::vector<cv::Vec3b> getPathColor(){return path_colors;}
+ std::vector<Edge_info> getPathEdges(){return used_edges;}
+
 
  /// setter to chose between four and eight neighbours in search graph
  void setFourNeighbours(bool four_neighbours){use_four_neighbours = four_neighbours;}
+
+
+ Cloud createModel(){
+   Cloud cloud;
+   cloud.reserve(height_map.cols*height_map.rows);
+
+   pcl_Point p;
+   p.r = 0;
+   p.g = 0;
+   p.b = 255;
+
+
+   pcl_Point nap; nap.x = nap.y = nap.z = std::numeric_limits<float>::quiet_NaN();
+
+   for (int y=0; y<height_map.rows; ++y){
+     p.y = y*cell_size_m_;
+     for (int x=0; x<height_map.cols; ++x){
+       p.x = x*cell_size_m_;
+       p.z = height_map.at<float>(y,x);
+       cloud.push_back(p);
+
+     }
+   }
+
+   cloud.width = height_map.cols;
+   cloud.height = height_map.rows;
+
+   return cloud;
+
+ }
+
+ void createPathMarker(visualization_msgs::Marker& marker);
+ void publishPath(ros::Publisher & pub_marker);
+
 
 };
 
@@ -253,21 +332,6 @@ public:
 
 };
 
-
-
-
-//struct Ant_Controller {
-//
-// cv::Point start;
-// cv::Point goal;
-//
-// std::map<int,Ant> ants;
-//
-//
-//
-//
-//
-//};
 
 
 #endif /* ANTS_H_ */

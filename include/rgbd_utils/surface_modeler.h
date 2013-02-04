@@ -41,7 +41,7 @@ struct UV_Patch {
 
 };
 
-class Surface_Modeler {
+class Elevation_map {
 
 
 
@@ -61,7 +61,8 @@ class Surface_Modeler {
 
   cv::Mat height_sum,hits;// helper for frame update
 
-
+  cv::Mat locked; // ignore all cells with locked > 0
+  bool locking_active;
 
 #ifdef WITH_LIBGEOMETRY
   void copyToMesh(rms::VFTriangleMesh& mesh);
@@ -83,15 +84,18 @@ class Surface_Modeler {
     return pos;
   }
 
-
-
-//  void updateHeight_gaussian(const Cloud& cloud, float sigma_factor = -1);
-//  bool updateHeight_iterpolation(const Cloud& cloud, float max_dist = -1);
+  int update_count;
 
 
 public:
 
+  void lockCells(const cv::Mat & mask, const Cloud& current);
+  void unLockCells(){locking_active = false;}
+
+
   bool is_initialized;
+
+
 
 
 cv::Mat mean;
@@ -162,10 +166,11 @@ cv::Mat mean;
   * @return
   * @see weight
   */
-  Surface_Modeler(){
+  Elevation_map(){
     model_computed = false;
     weight = 0.1;
     model_3d_valid = false;
+    locking_active = false;
 #ifdef WITH_LIBGEOMETRY
     exp_map_initialized = false;
 #endif
@@ -184,7 +189,8 @@ cv::Mat mean;
 
   // void getForeground(const Cloud& cloud, float min_prop, cv::Mat& fg_points, cv::Mat* fg_cells = NULL, Cloud* fg_cloud = NULL);
 
-  Cloud & getModel();
+  Cloud  getModel();
+  void getModel(Cloud& model);
 
   float getCellSize(){return cell_size_;}
 

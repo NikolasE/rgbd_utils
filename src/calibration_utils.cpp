@@ -35,7 +35,26 @@ cv::Point2f mean(const cv::Point& a, const cv::Point& b){
   return res;
 }
 
+cv::Scalar getColor(int i){
 
+  switch (i%5){
+  case 0:
+    return CV_RGB(255,0,0);
+  case 1:
+    return CV_RGB(0,255,0);
+  case 2:
+    return CV_RGB(0,0,255);
+  case 3:
+    return CV_RGB(255,255,0);
+  case 4:
+    return CV_RGB(0,255,255);
+  case 5:
+    return CV_RGB(255,0,255);
+  default:
+    assert(false);
+  }
+
+}
 
 
 /**
@@ -169,6 +188,26 @@ Cloud applyMask(const Cloud& current, const cv::Mat& mask){
   return result;
 
 }
+
+void markMask(const cv::Mat& mask, cv::Mat img){
+  assert(mask.size == img.size && mask.type() == CV_8UC1 && img.type() == CV_8UC3);
+
+  for (int x=0; x<mask.cols; ++x)
+    for (int y=0; y<mask.rows; ++y){
+      if (mask.at<uchar>(y,x) > 0) continue;
+
+      img.at<cv::Vec3b>(y,x) *= 0.5;
+    }
+
+}
+
+
+
+
+
+
+
+
 
 
 void getClusters(const Cloud& scene, std::vector<pcl::PointIndices>& segments, float max_distance, int min_point_count){
@@ -1240,6 +1279,7 @@ void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p
 * @param p Point in R^3
 * @param P projective Transformation (3x4 matrix in homogeneous coordinates)
 * @return Pixel that corresponds to the given world point.
+* @todo rename
 */
 cv::Point2f applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P){
   cv::Point2f px;
@@ -1448,8 +1488,15 @@ bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename){
 /// transfer colors to the mesh (replace by nan if mask at this position is 0)
 Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask){
 
-  assert(color.cols == int(mesh.width));
-  assert(color.rows == int(mesh.height));
+  if (color.cols != int(mesh.width) || color.rows != int(mesh.height) ){
+
+    ROS_INFO("color: %i %i, mesh: %i %i", color.cols, color.rows, int(mesh.width), int(mesh.height));
+    assert(color.rows == int(mesh.height));
+    assert(color.cols == int(mesh.width));
+
+  }
+
+
 
   Cloud result;
   pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
@@ -1459,8 +1506,8 @@ Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask
   uint32_t rgb;
   pcl_Point p;
 
-  for (int y=0; y<color.rows; ++y)
-    for (int x=0; x<color.cols; ++x)
+  for (uint y=0; y<mesh.height; ++y)
+    for (uint x=0; x<mesh.width; ++x)
       {
 
         if (mask && mask->at<uchar>(y,x) == 0){
@@ -1483,7 +1530,10 @@ Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask
         result.push_back(p);
       }
 
-  assert(result.size() == mesh.size());
+  if (result.size() != mesh.size()){
+    ROS_INFO("result: %zu, mesh: %zu", result.size(), mesh.size());
+    assert(result.size() == mesh.size());
+  }
 
   result.width = mesh.width;
   result.height = mesh.height;
@@ -1517,7 +1567,10 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
   float alpha;
 
   cv::Vec3b blue(255,0,0);
-  cv::Vec3b old_col;
+
+  float m = cv::mean(water_depth).val[0];
+
+  ROS_INFO("Water: mean: %f, min: %f, max: %f", m, min_water_depth, max_water_depth);
 
   for (int x=0; x<water_depth.cols; ++x)
     for (int y=0; y<water_depth.rows; ++y){
@@ -1528,25 +1581,16 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
       if (h != h || h <= min_water_depth) continue;
 
 
-      if (h >= max_water_depth)
+      if (h >= max_water_depth){
         alpha = 1;
-      else{
+        img.at<cv::Vec3b>(y,x) = blue;
+      }else{
 
         alpha = (h-min_water_depth)/(max_water_depth-min_water_depth);
+        img.at<cv::Vec3b>(y,x) = blue*alpha+(1-alpha)*img.at<cv::Vec3b>(y,x);
         //    alpha = max(min(double(2*(h-min_water_depth)/(max_water_depth-min_water_depth)),1.0),0.0);
       }
-      old_col = img.at<cv::Vec3b>(y,x);
-
-
-      // interpolate with old image
-      img.at<cv::Vec3b>(y,x) = blue*alpha+old_col*(1-alpha);
-
-      // new_color.at<cv::Vec3b>(y,x) = cv::Vec3b(255,0,0); // blue in BGR
-      //   alpha_channel.at<float>(y,x) = alpha;
     }
-
-
-
 
 }
 
@@ -1810,9 +1854,11 @@ void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, f
 void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_direction,
                                                  const Eigen::Vector3f& origin, Eigen::Affine3f& transformation){
 
-  Eigen::Vector3f x = (y_direction.cross(z_direction)).normalized();
+
   Eigen::Vector3f y = y_direction.normalized();
   Eigen::Vector3f z = z_direction.normalized();
+  Eigen::Vector3f x = y.cross(z);
+
 
   Eigen::Affine3f sub = Eigen::Affine3f::Identity();
   sub(0,3) = -origin[0];
@@ -1864,4 +1910,73 @@ Cloud createCloud(const cv::Mat& depth, float fx, float fy, float cx, float cy){
 
   return cloud;
 }
+
+
+
+pcl_Point getCenter(const std::vector<cv::Point>& pts, Cloud* cloud, bool* valid){
+  pcl_Point mean;
+  mean.x = mean.y = mean.z = 0;
+
+  int valid_cnt = 0;
+
+  for (uint i=0; i<pts.size(); ++i){
+    pcl_Point P = cloud->at(pts[i].x,pts[i].y);
+
+    if (P.x == P.x){
+      valid_cnt++;
+      add(mean,P);
+    }
+  }
+
+  if (valid_cnt == 0){
+    if (valid) *valid = false;
+    return mean;
+  }else{
+    if (valid) *valid = true;
+  }
+
+  div(mean,valid_cnt);
+
+  return mean;
+
+}
+
+
+void ensureSizeAndType(cv::Mat& img, const cv::Mat& model){
+  if (img.size != model.size || img.type() != model.type()){
+    img = cv::Mat(model.cols, model.rows,model.type());
+  }
+}
+
+
+
+
+void ensureSizeAndType(cv::Mat& img, int cols, int rows, int type){
+  if (img.cols != cols || img.rows != rows || img.type() != type){
+    img = cv::Mat(rows,cols,type);
+  }
+}
+
+
+void sendTrafo(const std::string& start_frame, const std::string& goal_frame, const Eigen::Affine3f& trafo ){
+
+  static tf::TransformBroadcaster br;
+  tf::Transform transform;
+
+  transform.setOrigin( tf::Vector3(trafo.translation()(0),trafo.translation()(1),trafo.translation()(2) ));
+  Eigen::Quaternionf quat(trafo.rotation());
+
+  tf::Quaternion tf_quat;
+
+  tf_quat.setX(quat.x());
+  tf_quat.setY(quat.y());
+  tf_quat.setZ(quat.z());
+  tf_quat.setW(quat.w());
+
+  transform.setRotation( tf_quat );
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), start_frame, goal_frame));
+
+
+}
+
 

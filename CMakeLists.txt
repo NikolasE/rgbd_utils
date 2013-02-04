@@ -22,6 +22,12 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 
 
+rosbuild_find_ros_package(dynamic_reconfigure)
+include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
+gencfg()
+
+
+
 rosbuild_add_boost_directories()
 
   
@@ -63,12 +69,13 @@ ENDIF (WITH_LIBGEOMETRY)
 
 
 
-rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/cloud_gmm.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp)# src/ants.cpp src/exp_map.cpp)
+rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/gaussian_model.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp )#src/exp_map.cpp)
 rosbuild_link_boost(rgbd_utils thread signals system)
 
-rosbuild_add_executable(gmm_test src/main_test.cpp src/cloud_gmm.cpp src/pinch_detection.cpp)
-target_link_libraries(gmm_test rgbd_utils)
+rosbuild_add_executable(detection_demo src/main_test.cpp src/gaussian_model.cpp src/pinch_detection.cpp)
+target_link_libraries(detection_demo rgbd_utils)
 
+#rosbuild_add_executable(ants src/main_ant.cpp src/ants.cpp)
 
 if (WITH_LIBGEOMETRY)
 target_link_libraries(rgbd_utils  ${LibGeometry_Base}/Testing/liblibGeometry.a ${LibGeometry_Base}/WildMagic4/SDK/Library/Release/libWm4Foundation.a )

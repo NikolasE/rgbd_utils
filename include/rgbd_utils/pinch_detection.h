@@ -9,20 +9,17 @@
 #define PINCH_DETECTION_H_
 
 
-#include "rgbd_utils/cloud_gmm.h"
+#include "rgbd_utils/gaussian_model.h"
 
 
-#define C_MIN_HAND_AREA 1000
 #define C_MIN_OBJECT_AREA 100
 
 // Grasp_Confirmed and Grasp_Finished are intermediate states
+// and correspond to button down and button up event.
+// Track_active is like mouse_move (moving with pressed button)
 enum Tracking_State {Track_Initialized  = 0, Track_Confirmed, Track_Active, Track_Finished};
 
-//struct Contour_info {
-//  float area;
-//  bool border_crossing;
-//  cv::Point2f center;
-//};
+enum Trackable_Type {TT_DEFAULT, TT_Object, TT_GRASP,TT_FINGERTIP};
 
 
 struct Tracked_Object {
@@ -37,11 +34,29 @@ struct Tracked_Object {
     not_seen_cnt = 0;
   }
 
-  float dist_to(const Tracked_Object& other){
+  float dist_to(const Tracked_Object& other, Tracking_State* state = NULL){
     assert(false);
     return -1;
   }
 
+  std::vector<cv::Point> mask;
+  pcl_Point position_world;
+  pcl_Point position_kinect;
+  cv::Point2f pixel_position;
+
+
+  bool getAngle_PCA_2D(float& angle);
+  bool getAngle_PCA_3D(const Cloud& cloud,float& angle, Eigen::Affine3f* trafo = NULL);
+
+};
+
+
+struct Fingertip : public Tracked_Object {
+  Fingertip(){}
+
+  float dist_to(const Fingertip& other,Tracking_State* state = NULL){
+    return norm(sub(position_world,other.position_world));
+  }
 
 };
 
@@ -51,42 +66,43 @@ struct Playing_Piece : public Tracked_Object {
 
   Playing_Piece(){}
 
-  float dist_to(const Playing_Piece& other){
-    // TODO: return -1 of area of volume is too different
-    return norm(sub(position,other.position));
+  float dist_to(const Playing_Piece& other,Tracking_State* state = NULL){
+
+    double dist = norm(sub(position_world,other.position_world));
+
+    if (state && *state != Track_Active && dist > 0.05)
+      return -1;
+
+    return dist;
   }
 
   float area;
 
-  std::vector<cv::Point> mask;
 
-  pcl_Point position;
+  std::vector<cv::Point> contour;
 
   //      // copy image of detection:
   //      cv::Mat foo = cv::Mat::zeros( foreground.size(), CV_8UC3 );
   //      cv::drawContours(foo,contours,largest_hole_id,CV_RGB(255,255,255),-1);
   //      rgb.copyTo(detection.);
 
-
 };
 
 struct Grasp : public Tracked_Object {
 
   /// maximal distance (in m) between track and object for update
-  static const float max_dist = 0.02;
+  static const float max_dist = 1e6;//0.02;
 
 
   Grasp(){}
 
-  float dist_to(const Grasp& other){
-    float d = norm(sub(position,other.position));
-    if (d>0.02) return -1;
+  float dist_to(const Grasp& other,Tracking_State* state = NULL){
+    float d = norm(sub(position_world,other.position_world));
+    if (d>max_dist) return -1;
     return d;
   }
 
   float area;
-  std::vector<cv::Point> edge;
-  pcl_Point position;
 
 
 };
@@ -117,10 +133,65 @@ struct Track {
 
 
   Trackable last_detection(){
+    // todo: return pointer only (or const reference)
     assert(detections.size()>0);
     return detections[detections.size()-1];
   }
 
+  void visualizeOnImage(cv::Mat& img, cv::Scalar color, Trackable_Type type = TT_DEFAULT){
+    uint n = detections.size();
+
+    if (n==0) return;
+
+    float l = 5;
+
+    if (type == TT_FINGERTIP){
+      cv::Point p = detections[0].pixel_position;
+      cv::rectangle(img,cv::Point(p.x-l,p.y-l),cv::Point(p.x+l,p.y+l),color,2);
+      p = detections[n-1].pixel_position;
+      cv::rectangle(img,cv::Point(p.x-l,p.y-l),cv::Point(p.x+l,p.y+l),color,2);
+    }else{
+      cv::circle(img,detections[0].pixel_position,2*l,color,2);
+      cv::circle(img,detections[n-1].pixel_position,2*l,color,2);
+    }
+
+    for (uint i=0; i<n-1; ++i){
+      cv::line(img,detections[i].pixel_position,detections[i+1].pixel_position,color,3);
+    }
+
+  }
+
+
+  void visualize_on_surface(const cv::Mat P, cv::Mat& img,cv::Scalar color){
+
+    uint n = detections.size();
+
+    if (n==0) return;
+
+    float l = 5;
+
+    Trackable obs = detections[detections.size()-1];
+
+
+    //  if (type == TT_FINGERTIP){
+    cv::Point2f px = applyPerspectiveTrafo(obs.position_kinect,P);
+    cv::circle(img,px,30,color,-1);
+    //  }
+
+
+    //    cv::rectangle(img,cv::Point(p.x-l,p.y-l),cv::Point(p.x+l,p.y+l),color,2);
+    //    p = detections[n-1].pixel_position;
+    //    cv::rectangle(img,cv::Point(p.x-l,p.y-l),cv::Point(p.x+l,p.y+l),color,2);
+    //  }else{
+    //    cv::circle(img,detections[0].pixel_position,2*l,color,2);
+    //    cv::circle(img,detections[n-1].pixel_position,2*l,color,2);
+    //  }
+
+    //  for (uint i=0; i<n-1; ++i){
+    //    cv::line(img,detections[i].pixel_position,detections[i+1].pixel_position,color,3);
+    //  }
+
+  }
 
 
 };
@@ -128,14 +199,14 @@ struct Track {
 
 
 
-typedef std::map<int,Grasp>::iterator Grasp_it;
-typedef std::map<int,Playing_Piece>::iterator Piece_it;
-
-typedef std::map<int,Tracked_Object>::iterator Track_it;
 
 
 
 
+
+typedef std::map<int,Track<Grasp> >::iterator GraspTrack_it;
+typedef std::map<int,Track<Playing_Piece> >::iterator PieceTrack_it;
+typedef std::map<int,Track<Fingertip> >::iterator FingerTrack_it;
 
 
 
@@ -145,19 +216,14 @@ class Object_tracker {
   typedef typename std::map<int,Tracker_ >::iterator track_it;
 
 private:
-  float max_dist_;
 
-  // tracks are published after so many observations and closed after so many frames without detection
+  // tracks are published after so many observations
   uint detection_hysteresis;
 
-  static int next_id;
+  // track is closed after so many frames without detection
+  uint deletion_hysteresis;
 
-  /*
-    T last_element(const std::vector<T>& objects){
-        assert(objects.size()>0);
-        return objects[objects.size()-1];
-    }
-    */
+  static int next_id;
 
   void unsetUpdated(){
     for (track_it it = tracks.begin(); it != tracks.end(); ++it)
@@ -165,6 +231,7 @@ private:
   }
 
 public:
+
 
   std::map<int,Tracker_> tracks;
 
@@ -175,7 +242,9 @@ public:
  */
   /// match tracks with detections by finding iteratively the closest pair
   void update_tracks(const std::vector<Trackable_>& detections, float max_dist = -1){
-    if (max_dist <= 0)  max_dist = max_dist_;
+
+
+    //    ROS_INFO("Updating tracks with %zu observations", detections.size());
 
     // remember which detection was used to update a track
     bool detection_used[detections.size()];
@@ -183,13 +252,11 @@ public:
 
     unsetUpdated(); // set updated-flag to zero (no track was updated yet)
 
-    // ROS_INFO("matching %zu detections with %zu tracks", detections.size(), tracks.size());
-
     while (true){
 
       int best_track_id = -1;      // id of updated track
       int best_detection_pos = -1; // id of detection used to update
-      float min_dist = max_dist;   // distance of best pair
+      float min_dist = max_dist>0?max_dist:1e6;   // distance of best pair
 
       for (track_it it = tracks.begin(); it!=tracks.end(); ++it){
 
@@ -197,22 +264,18 @@ public:
 
         for (uint i=0; i < detections.size(); ++i){
 
-          // ROS_INFO("i: %i",i);
-          // ROS_INFO("clouds: %zu %zu",detections[i].corner_points_local.size(),detections[i].corner_points_kinect_frame.size() );
-
-          // assert(detections[i].corner_points_local.size() == 8);
-          // assert(detections[i].corner_points_kinect_frame.size() == 8);
-
           if (detection_used[i]){ continue; }
+
+          // ROS_INFO("track %i has %zu detections",it->first,it->second.detections.size());
 
           float dist = it->second.last_detection().dist_to(detections[i]);
 
           // ROS_INFO("comparing track %i with obs %i: %f", it->first, i, dist);
 
-          // detections[i] is an observation and has only one last_detection
-          // cv::Point2f detection = detections[i].last_detection;
+          // if track and observation are too different (size, color,...) dist_to returns -1
+          if (dist < 0)
+            continue;
 
-          // ROS_INFO("detection %i vs grasp %i: %f px", i,it->first,dist);
 
           if (dist < min_dist){
             min_dist = dist;
@@ -234,7 +297,6 @@ public:
 
         detection_used[best_detection_pos] = true;
 
-        // track_updated[best_track_id] = true;
       }else{
         // no match was found. Unmatched detections will spawn new tracks
         break;
@@ -269,7 +331,7 @@ public:
       }
 
 
-      bool track_too_old = g->not_seen_cnt > detection_hysteresis;
+      bool track_too_old = g->not_seen_cnt > deletion_hysteresis;
 
       // remove grasp if it was finished in the last update
       // http://stackoverflow.com/questions/263945/what-happens-if-you-call-erase-on-a-map-element-while-iterating-from-begin-to
@@ -290,19 +352,21 @@ public:
       if (detection_used[i])
         continue;
 
-      Tracker_ new_track; // (detections[i].last_detection);
+      Tracker_ new_track;
       new_track.appendObservation(detections[i]);
       new_track.id = next_id++;
       new_track.state = Track_Initialized;
 
       tracks[new_track.id] = new_track;
 
-      // assert(detections[i].corner_points_local.size() >= 8);
-      // assert(detections[i].corner_points_kinect_frame.size() >= 8);
-
-      // ROS_INFO("clouds: %zu %zu",detections[i].corner_points_local.size(),detections[i].corner_points_kinect_frame.size() );
-      // ROS_INFO("creating new track with id %i for obs %i", new_track.id,i);
     }
+
+
+    for (track_it it = tracks.begin(); it!=tracks.end(); ++it){
+      assert(it->second.detections.size()>0);
+    }
+
+
 
   } // update_tracks
 
@@ -310,26 +374,18 @@ public:
 
 
   Object_tracker(){
-    max_dist_ = 30;
-    detection_hysteresis = 5;
+    detection_hysteresis = 10;
+    deletion_hysteresis = 10;
   }
 
 };
 
-//template <class T>
-//        int Object_tracker<T>::next_id = 0;
 
 template<class Trackable_, class Tracker_>
 int Object_tracker<Trackable_, Tracker_>::next_id = 0;
 
 
-// typedef Object_tracker<Grasp> Grasp_Tracker;
-// typedef Object_tracker<Playing_Piece> Piece_Tracker;
-
-
-
-
-pcl_Point getCenter(const std::vector<cv::Point>& pts, const Cloud& cloud);
+void drawObjectContours(Object_tracker<Playing_Piece,Track<Playing_Piece> >& piece_tracker, cv::Mat& img);
 
 
 
@@ -338,14 +394,19 @@ class Detector  {
 
 
   static const float small_area_threshold = 100;
-  static const float large_area_threshold = 1500;
+
+  // static const float fingertip_min_dist = 0.02;
+  static const float fingertip_max_dist = 0.06;
+  static const float fingertip_min_size = 30;
 
 
   std::vector<std::vector<cv::Point> > contours;
   std::vector<cv::Vec4i> hierarchy;
   std::vector<float> areas;
   std::vector<bool> intersects;
+  std::vector<bool> is_grasp;
 
+  //  std::vector<int> hand_contours;
   cv::Mat detection_area_edge;
   cv::Mat detection_area;
 
@@ -356,26 +417,50 @@ class Detector  {
 
   bool handVisible;
 
+  cv::Mat masked_edge,hand_edge,cpy;
+
   cv::Mat foreground_; // copy of foreground image
-  cv::Mat dummy; // helper image 8UC1
+  cv::Mat norm_;
+  cv::Mat last_static_norm;
+  cv::Mat dummy, dummy_2; // helper image 8UC1
+  cv::Mat diff, dist_thres;
+
+  void getFingerTips(cv::Mat* rgb = NULL);
+  void getFingerTips_2(cv::Mat* rgb = NULL);
+  void getObjects(cv::Mat* rgb_result);
+  void getGrasps(cv::Mat* rgb_result);
+
+  Cloud* cloud_;
+  Eigen::Affine3f kinect_trafo_;
+  bool trafo_set;
+
 
 public:
+
+  void setTransformation(Eigen::Affine3f kinect_trafo){
+    kinect_trafo_ = kinect_trafo;
+    trafo_set = true;
+  }
+
 
   void showDetectionAreaEdge(cv::Mat& img);
 
   std::vector<Grasp> grasp_detections;
   std::vector<Playing_Piece> object_detections;
+  std::vector<Fingertip> finger_detections;
 
   Detector(){
     detection_area_set = false;
     handVisible = false;
+    trafo_set = false;
   }
 
 
-  void newFrame(const cv::Mat& foreground);
+
+  void newFrame(const cv::Mat& foreground, const cv::Mat& norm, Cloud* cloud = NULL);
 
   void analyseScene(cv::Mat* rgb_result = NULL);
-  void detectPointingGesture(const cv::Mat& dists, cv::Mat* rgb_result = NULL);
+  //  void detectPointingGesture(const cv::Mat& dists, cv::Mat* rgb_result = NULL);
 
   void setDetectionArea(const cv::Mat& mask);
 

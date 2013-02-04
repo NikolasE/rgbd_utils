@@ -86,7 +86,11 @@ class PixelEnvironmentModel {
   cv::Mat mask_;
   bool mask_set;
 
+
+
 public:
+
+  int update_cnt;
 
   void init(int width, int height, int queue_length = 10);
 
@@ -103,9 +107,14 @@ public:
 
 
   void getDistance(const Cloud& current, cv::Mat& dists);
+  void getNorm(const Cloud& current, cv::Mat& norm);
+
+
 
   void getSigmas(cv::Mat& vars, bool normalize);
   void getMeans(cv::Mat& mean);
+
+
 
   /// positions with mask == 0 are ignored (mask has to be CV_8UC1 and correcly sized
   void setMask(const cv::Mat& mask);
@@ -123,6 +132,8 @@ public:
       for (int x=0; x<width_; ++x){
         gaussians[y][x].setHistoryLength(length);
       }
+
+    update_cnt = 0;
 
   }
 

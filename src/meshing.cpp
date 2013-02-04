@@ -51,7 +51,7 @@ inline bool validTriangle(const pcl_Point& p0, const pcl_Point& p1, const pcl_Po
 * @return mesh simple mesh creation. Cloud is organized so that neighbours are well defined
 *
 */
-pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_length, bool do_checks){
+pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_length, bool do_checks){
  pcl::PolygonMesh mesh;
 
 
@@ -70,7 +70,7 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_lengt
 
  vertices.vertices.resize(3);
 
- float max_length_sq = max_length*max_length;
+ float max_length_sq = max_edge_length*max_edge_length;
 
  for (uint x = 0; x<cloud.width-1; ++x)
   for (uint y = 0; y<cloud.height-1; ++y){
