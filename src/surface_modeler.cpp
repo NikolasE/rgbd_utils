@@ -348,7 +348,7 @@ void Elevation_map::reset(){
 * old height was h_old, it is updated to h = (1-weight)h_old+weight*h_new.
 *
 * @todo (speedup) combine with getFGMask
-*
+* @return: 
 */
 bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
 
@@ -424,9 +424,19 @@ bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
   model_3d_valid = false;// therefore, the old 3d-model is not longer valid and will be recreated on demand
 
   //small blur to smooth heightfield
-  if (!locking_active)
-    cv::GaussianBlur(mean, mean, cv::Size(3,3),2,2);
-
+    cv::Mat mean_old;
+  if (locking_active)
+         mean.copyTo(mean_old);
+    
+  int blur_size = 3;  
+  cv::GaussianBlur(mean, mean, cv::Size(blur_size,blur_size),2,2);
+  
+  if (locking_active){
+    cv::Mat locked_dilated
+    cv::dilate(locked, locked_dilated, cv::Mat(), cv::Point(-1,-1), blur_size);
+    mean_old.copyTo(mean,locked_dilated); // reset mean at locked cells
+  }
+  
   // due to measurement errors, some pixels have a high error. If a hand is visible in the image,
   // more than 500 Pixels are counted.
   return dyn_pixel_cnt > 10;
