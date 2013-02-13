@@ -1550,7 +1550,7 @@ Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask
 * @param min_water_depth
 * @param max_water_depth
 * @param mask
-* @todo implement without loops
+* @todo implement without loops (?)
 */
 /// show watervisualization using alpha_channel
 void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat& water_depth, float min_water_depth, float max_water_depth, const cv::Mat* mask){
@@ -1559,7 +1559,7 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
   // alpha_channel = cv::Mat(img.rows, img.cols, CV_32FC1);
   // cv::Mat new_color = cv::Mat(img.rows, img.cols, CV_8UC3);
 
-
+assert(water_depth.type() == CV_32FC1);
   //  new_color.setTo(0);
 
   img.setTo(0);
@@ -1568,16 +1568,16 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
 
   cv::Vec3b blue(255,0,0);
 
-  float m = cv::mean(water_depth).val[0];
-
-  ROS_INFO("Water: mean: %f, min: %f, max: %f", m, min_water_depth, max_water_depth);
+  double min_,max_;
+  cv::minMaxLoc(water_depth,&min_,&max_);
+  ROS_INFO("min: %f, max: %f, thresholds: %f %f", min_,max_, min_water_depth, max_water_depth);
 
   for (int x=0; x<water_depth.cols; ++x)
     for (int y=0; y<water_depth.rows; ++y){
 
       if (mask && mask->at<uchar>(y,x) == 0) continue;
 
-      float h = water_depth.at<double>(y,x);
+      float h = water_depth.at<float>(y,x);
       if (h != h || h <= min_water_depth) continue;
 
 
@@ -1585,7 +1585,6 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
         alpha = 1;
         img.at<cv::Vec3b>(y,x) = blue;
       }else{
-
         alpha = (h-min_water_depth)/(max_water_depth-min_water_depth);
         img.at<cv::Vec3b>(y,x) = blue*alpha+(1-alpha)*img.at<cv::Vec3b>(y,x);
         //    alpha = max(min(double(2*(h-min_water_depth)/(max_water_depth-min_water_depth)),1.0),0.0);
@@ -1609,6 +1608,8 @@ void waterVisualization(cv::Mat& img, const cv::Mat& water_depth, float min_wate
 
   assert(img.size == water_depth.size);
   assert(max_water_depth >= min_water_depth);
+  assert(water_depth.type() == CV_32FC1);
+
 
   if (mask) (assert(mask->size == img.size));
 
@@ -1619,13 +1620,14 @@ void waterVisualization(cv::Mat& img, const cv::Mat& water_depth, float min_wate
   col.val[0] = 120; // blue...
   float h;
 
+
   for (int x=0; x<water_depth.cols; ++x)
     for (int y=0; y<water_depth.rows; ++y){
 
       if (mask && mask->at<uchar>(y,x) == 0) continue;
 
-      h = water_depth.at<double>(y,x);
-      if (h != h || h <= min_water_depth) continue;
+      h = water_depth.at<float>(y,x);
+      if (h != h || h <= min_water_depth){ continue;}
 
       // change saturation depending on color
       col.val[1] = max(min(int((h-min_water_depth)/(max_water_depth-min_water_depth)*255),255),20);
@@ -1661,14 +1663,13 @@ void heightVisualization(cv::Mat& img, const cv::Mat height, float z_min, float 
 
   cv::cvtColor(img,img,CV_BGR2HSV);
 
-  float z;
 
   for (int x=0; x<height.cols; ++x)
     for (int y=0; y<height.rows; ++y){
 
       if (mask && mask->at<uchar>(y,x) == 0) continue;
 
-      z = height.at<float>(y,x);
+      float z = height.at<float>(y,x);
       if (z != z || z < z_min || z > z_max) continue;
 
       //   col.val[0] = int((z-z_min)/(color_height-z_min)*180)%180;

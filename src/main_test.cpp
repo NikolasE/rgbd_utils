@@ -162,20 +162,20 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
   for (GraspTrack_it it = grasp_tracker.tracks.begin(); it != grasp_tracker.tracks.end(); ++it){
     if (it->second.state == Track_Active){
       it->second.visualizeOnImage(rgb_image,getColor(it->first));
-      pcl_Point center = it->second.last_detection().position_world;
+      pcl_Point center = it->second.last_detection()->position_world;
       grasps.push_back(center);
       // ROS_INFO("Found grasp at: %f %f %f", center.x,center.y, center.z);
 
       // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
 
       float angle;
-      it->second.last_detection().getAngle_PCA_2D(angle);
+      it->second.last_detection()->getAngle_PCA_2D(angle);
       //ROS_INFO("Angle: %f", angle);
 
 //      cout << angle << endl;
 
       Eigen::Affine3f trafo;
-      it->second.last_detection().getAngle_PCA_3D(current_cloud,angle,&trafo);
+      it->second.last_detection()->getAngle_PCA_3D(current_cloud,angle,&trafo);
 
 
     }
@@ -190,23 +190,23 @@ void CloudCB(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr){
   }
 
 
-  for (PieceTrack_it it = piece_tracker.tracks.begin(); it != piece_tracker.tracks.end(); ++it){
-    if (it->second.state == Track_Active){
-      it->second.visualizeOnImage(rgb_image,getColor(it->first));
-      pcl_Point center = it->second.last_detection().position_world;
-      // ROS_INFO("Found Piece (%i) at: %f %f %f", it->first, center.x,center.y, center.z);
-      // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
-    }
-  }
+//  for (PieceTrack_it it = piece_tracker.tracks.begin(); it != piece_tracker.tracks.end(); ++it){
+//    if (it->second.state == Track_Active){
+//      it->second.visualizeOnImage(rgb_image,getColor(it->first));
+//      // pcl_Point center = it->second.last_detection()->position_world;
+//      // ROS_INFO("Found Piece (%i) at: %f %f %f", it->first, center.x,center.y, center.z);
+//      // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
+//    }
+//  }
 
 
-  for (FingerTrack_it it = fingertip_tracker.tracks.begin(); it != fingertip_tracker.tracks.end(); ++it){
-    // if (it->second.state == Track_Active)
-    it->second.visualizeOnImage(rgb_image,getColor(it->first),TT_FINGERTIP);
-    pcl_Point center = it->second.last_detection().position_world;
-    // ROS_INFO("Found finger at: %f %f %f", center.x,center.y, center.z);
-    // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
-  }
+//  for (FingerTrack_it it = fingertip_tracker.tracks.begin(); it != fingertip_tracker.tracks.end(); ++it){
+//    // if (it->second.state == Track_Active)
+//    it->second.visualizeOnImage(rgb_image,getColor(it->first),TT_FINGERTIP);
+//    pcl_Point center = it->second.last_detection()->position_world;
+//    // ROS_INFO("Found finger at: %f %f %f", center.x,center.y, center.z);
+//    // cout <<  center.x << "  " << center.y << "  " <<  center.z << endl;
+//  }
 
 
 

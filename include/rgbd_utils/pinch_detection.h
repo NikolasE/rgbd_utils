@@ -55,7 +55,16 @@ struct Fingertip : public Tracked_Object {
   Fingertip(){}
 
   float dist_to(const Fingertip& other,Tracking_State* state = NULL){
-    return norm(sub(position_world,other.position_world));
+
+
+    double dist = norm(sub(position_world,other.position_world));
+
+    if (dist > 0.05){
+      ROS_INFO("dist too large: %f", dist);
+      return -1;
+    }
+
+    return dist;
   }
 
 };
@@ -78,7 +87,6 @@ struct Playing_Piece : public Tracked_Object {
 
   float area;
 
-
   std::vector<cv::Point> contour;
 
   //      // copy image of detection:
@@ -91,7 +99,7 @@ struct Playing_Piece : public Tracked_Object {
 struct Grasp : public Tracked_Object {
 
   /// maximal distance (in m) between track and object for update
-  static const float max_dist = 1e6;//0.02;
+  static const float max_dist = 0.075;
 
 
   Grasp(){}
@@ -116,7 +124,7 @@ struct Track {
 
   int id;
   Tracking_State state;
-  uint not_seen_cnt;
+     uint not_seen_cnt;
 
   std::vector<Trackable> detections;
   bool updated_in_current_frame;
@@ -132,10 +140,10 @@ struct Track {
   }
 
 
-  Trackable last_detection(){
+  Trackable* last_detection(){
     // todo: return pointer only (or const reference)
     assert(detections.size()>0);
-    return detections[detections.size()-1];
+    return &detections[detections.size()-1];
   }
 
   void visualizeOnImage(cv::Mat& img, cv::Scalar color, Trackable_Type type = TT_DEFAULT){
@@ -194,7 +202,18 @@ struct Track {
   }
 
 
+  /**
+    * returns true if last two detections are more than max_dist m apart
+    */
+  bool was_moved(float max_dist = 0.05){
+    if (detections.size() < 2)
+      return false;
+    double dist = last_detection->dist_to(detections[detections.size()-2]);
+    return dist > max_dist;
+  }
+
 };
+
 
 
 
@@ -239,11 +258,10 @@ public:
  *
  * @param detections  object detections in the current frame
  * @param max_dist    maximal distance (in px) of a matched pair
+ * @param accept_new_tracks true if new tracks should be created for unmatched observations. Set to false after the surface was changed manually
  */
   /// match tracks with detections by finding iteratively the closest pair
-  void update_tracks(const std::vector<Trackable_>& detections, float max_dist = -1){
-
-
+  void update_tracks(const std::vector<Trackable_>& detections, bool accept_new_tracks, float max_dist = -1){
     //    ROS_INFO("Updating tracks with %zu observations", detections.size());
 
     // remember which detection was used to update a track
@@ -268,7 +286,7 @@ public:
 
           // ROS_INFO("track %i has %zu detections",it->first,it->second.detections.size());
 
-          float dist = it->second.last_detection().dist_to(detections[i]);
+          float dist = it->second.last_detection()->dist_to(detections[i]);
 
           // ROS_INFO("comparing track %i with obs %i: %f", it->first, i, dist);
 
@@ -307,7 +325,9 @@ public:
 
     // mark tracks that have not been updated
     for (track_it it = tracks.begin(); it!=tracks.end(); ++it){
-      if (! it->second.updated_in_current_frame)
+      if (it->second.updated_in_current_frame)
+        it->second.not_seen_cnt = 0; // reset counter if object was seen
+      else
         it->second.not_seen_cnt++;
     }
 
@@ -325,9 +345,14 @@ public:
 
       /// track was seen in several frames and is now an official track
       if (g->detections.size() == detection_hysteresis && g->state == Track_Initialized){
-        //   ROS_INFO("New track at %f %f", g->last_detection.x ,g->last_detection.y);
+        //   ROS_INFO("New track at %f %f", g->last_detection->x ,g->last_detection->y);
         g->state = Track_Confirmed;
         //   ROS_INFO("track %i: now confirmed", g->id);
+      }
+
+
+      if (g->not_seen_cnt > 0){
+        ROS_INFO("Track not seen for %i frames (thres: %i)",g->not_seen_cnt, deletion_hysteresis);
       }
 
 
@@ -348,17 +373,19 @@ public:
     }
 
 
-    for (uint i=0; i<detections.size(); ++i){
-      if (detection_used[i])
-        continue;
+    // create new tracks for unmatched detections
+    if (accept_new_tracks){
+      for (uint i=0; i<detections.size(); ++i){
+        if (detection_used[i])
+          continue;
 
-      Tracker_ new_track;
-      new_track.appendObservation(detections[i]);
-      new_track.id = next_id++;
-      new_track.state = Track_Initialized;
+        Tracker_ new_track;
+        new_track.appendObservation(detections[i]);
+        new_track.id = next_id++;
+        new_track.state = Track_Initialized;
 
-      tracks[new_track.id] = new_track;
-
+        tracks[new_track.id] = new_track;
+      }
     }
 
 
@@ -374,8 +401,8 @@ public:
 
 
   Object_tracker(){
-    detection_hysteresis = 10;
-    deletion_hysteresis = 10;
+    detection_hysteresis = 15;
+    deletion_hysteresis = 20;
   }
 
 };
@@ -396,7 +423,7 @@ class Detector  {
   static const float small_area_threshold = 100;
 
   // static const float fingertip_min_dist = 0.02;
-  static const float fingertip_max_dist = 0.06;
+  static const float fingertip_max_dist = 0.05;
   static const float fingertip_min_size = 30;
 
 
@@ -413,15 +440,13 @@ class Detector  {
 
   bool detection_area_set;
 
-  bool intersectsDetectionAreaBorder(const std::vector<std::vector<cv::Point> > contours, int i);
+  bool intersectsDetectionAreaBorder_withHeight(const std::vector<std::vector<cv::Point> > contours, int i, const cv::Mat& dist);
 
   bool handVisible;
 
   cv::Mat masked_edge,hand_edge,cpy;
 
   cv::Mat foreground_; // copy of foreground image
-  cv::Mat norm_;
-  cv::Mat last_static_norm;
   cv::Mat dummy, dummy_2; // helper image 8UC1
   cv::Mat diff, dist_thres;
 
@@ -433,6 +458,13 @@ class Detector  {
   Cloud* cloud_;
   Eigen::Affine3f kinect_trafo_;
   bool trafo_set;
+
+
+private:
+  cv::Mat hand_test; // some helper used in
+  cv::Mat dist_hand; // intersectsDetectionAreaBorder_withHeight
+  cv::Mat intersection;
+
 
 
 public:
@@ -460,7 +492,6 @@ public:
   void newFrame(const cv::Mat& foreground, const cv::Mat& norm, Cloud* cloud = NULL);
 
   void analyseScene(cv::Mat* rgb_result = NULL);
-  //  void detectPointingGesture(const cv::Mat& dists, cv::Mat* rgb_result = NULL);
 
   void setDetectionArea(const cv::Mat& mask);
 

@@ -144,8 +144,9 @@ void drawObjectContours(Object_tracker<Playing_Piece,Track<Playing_Piece> >& pie
 
   std::vector<std::vector<cv::Point> > contours;
 
+  // create vector of observations (needed interface for cv::drawContours)
   for (PieceTrack_it it = piece_tracker.tracks.begin(); it != piece_tracker.tracks.end(); ++it){
-    contours.push_back(it->second.last_detection().contour);
+    contours.push_back(it->second.last_detection()->contour);
   }
 
   for (uint i=0; i<contours.size(); ++i)
@@ -167,69 +168,103 @@ void Detector::setDetectionArea(const cv::Mat& mask){
   //cv::dilate(detection_area_edge, detection_area_edge, cv::Mat(), cv::Point(-1,-1),1);
 }
 
-
-
-bool Detector::intersectsDetectionAreaBorder(const std::vector<std::vector<cv::Point> > contours, int i){
+bool Detector::intersectsDetectionAreaBorder_withHeight(const std::vector<std::vector<cv::Point> > contours, int i, const cv::Mat& dist){
   assert(detection_area_set);
 
-  cv::Mat foo = cv::Mat::zeros(detection_area_edge.size(), CV_8UC1);
+  // cv::Mat foo = cv::Mat::zeros(detection_area_edge.size(), CV_8UC1);
 
-  cv::drawContours(foo, contours,i, CV_RGB(255,255,255),2);
+  ensureSizeAndType(hand_test,detection_area_edge.cols,detection_area_edge.rows,CV_8UC1);
+  hand_test.setTo(0);
 
-  cv::Mat intersection;
-  foo.copyTo(intersection,detection_area_edge);
+  cv::drawContours(hand_test, contours,i, CV_RGB(255,255,255),2);
+
+  //  double m,x;
+  //  cv::minMaxLoc(dist,&m,&x);
+  //  ROS_INFO("diff image 2: %f %f", m,x);
+
+  // if the contour is closer than 10cm to the surface, it's definitely no hand (but rather some moved sand)
+  ensureSizeAndType(dist_hand,dist);
+  dist_hand.setTo(0);
+
+  dist.copyTo(dist_hand, hand_test);
+  double min_,max_;
+  cv::minMaxLoc(dist_hand, &min_, &max_);
+
+  //  ROS_INFO("Height %i: %f %f",i,min_, max_);
+
+  if (max_ < 0.1)
+    return false;
+
+  ensureSizeAndType(intersection,hand_test);
+  intersection.setTo(0);
+  hand_test.copyTo(intersection,detection_area_edge);
 
   return cv::countNonZero(intersection)>0;
 }
 
-
-
-void Detector::newFrame(const cv::Mat& foreground, const cv::Mat& norm, Cloud* cloud){
+void Detector::newFrame(const cv::Mat& foreground, const cv::Mat& dists, Cloud* cloud){
   if (!detection_area_set){
     ROS_WARN("detector: no detection area!");
     return;
   }
 
-  contours.clear();
-  hierarchy.clear();
   areas.clear();
+  contours.clear();
+
+  hierarchy.clear();
   intersects.clear();
+
+  //  cv::imwrite("data/fg.png", foreground);
+  //  cv::imwrite("data/fg_mask.png", detection_area);
+
 
   foreground.copyTo(foreground_,detection_area);
   cv::findContours(foreground_, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
   foreground.copyTo(foreground_,detection_area); // findcontours changes source image
 
-  norm.copyTo(norm_);
+  dists.copyTo(diff);
 
   cloud_ = cloud;
 
   handVisible = false;
 
-  for( uint i = 0; i< contours.size(); i++ ){
+  //  double m,x;
+  //  cv::minMaxLoc(dists,&m,&x);
+  //  ROS_INFO("diff: %f %f", m,x);
+
+  //  float area_sum = 0;
+
+  for ( uint i = 0; i< contours.size(); i++ ){
     float area = cv::contourArea(contours[i]);
     areas.push_back(area);
 
-    if (area <= 10){
+
+    //    area_sum += area;
+
+    //    ROS_INFO("area: %i %f",i,area);
+    if (area <= 50){
       intersects.push_back(false);
       continue;
     }
 
-    bool inter = intersectsDetectionAreaBorder(contours,i);
+    bool inter = intersectsDetectionAreaBorder_withHeight(contours,i, dists);
+
     intersects.push_back(inter);
     handVisible = handVisible || inter;
   }
 
+  //  ROS_INFO("areasun: %f", area_sum);
+
+  assert(areas.size() == contours.size());
+
 }
-
-
-
 
 void Detector::showDetectionAreaEdge(cv::Mat& img){
   cv::Mat red(img.rows, img.cols,CV_8UC3,CV_RGB(255,0,0));
   red.copyTo(img,detection_area_edge);
 }
 
-
+/*
 void Detector::getFingerTips_2(cv::Mat* rgb){
 
 
@@ -284,7 +319,7 @@ void Detector::getFingerTips_2(cv::Mat* rgb){
 
 
 }
-
+*/
 
 void Detector::getFingerTips(cv::Mat* rgb){
 
@@ -296,11 +331,6 @@ void Detector::getFingerTips(cv::Mat* rgb){
     cv::namedWindow("and");
   }
 
-
-  if (last_static_norm.cols != norm_.cols)
-    return;
-
-  diff = last_static_norm-norm_;
 
   ensureSizeAndType(dist_thres,foreground_.cols,foreground_.rows, CV_32FC1);
   diff.copyTo(dist_thres,foreground_);
@@ -342,6 +372,7 @@ void Detector::getFingerTips(cv::Mat* rgb){
 
     masked_edge.convertTo(cpy, CV_8UC1);
     assert(cpy.type() == CV_8UC1);
+    assert(cpy.cols > 0);
     cv::findContours(cpy, contours_finger, hierarchy_finger, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
 
     int N = int(contours_finger.size());
@@ -394,7 +425,7 @@ void Detector::getFingerTips(cv::Mat* rgb){
         tip.position_world = getTransformedPoint(tip.position_kinect,kinect_trafo_);
 
         ROS_INFO("Kinect: %f %f %f world: %f %f %f",tip.position_kinect.x,tip.position_kinect.y,tip.position_kinect.z,
-                tip.position_world.x,tip.position_world.y,tip.position_world.z);
+                 tip.position_world.x,tip.position_world.y,tip.position_world.z);
       }
     }
 
@@ -546,19 +577,22 @@ void Detector::analyseScene(cv::Mat* rgb_result){
     return;
   }
 
+  //  ROS_INFO("areas: %zu, contours: %zu", areas.size(), contours.size());
   assert(areas.size() == contours.size());
 
   finger_detections.clear();
   grasp_detections.clear();
   object_detections.clear();
 
+
+
+
+
   if (handVisible){
     getGrasps(rgb_result);
     getFingerTips(rgb_result);
   }else{
     getObjects(rgb_result);
-   // ROS_INFO("Found %zu objects", object_detections.size());
-    norm_.copyTo(last_static_norm);
   }
 
 }
@@ -629,7 +663,7 @@ void Detector::analyseScene(cv::Mat* rgb_result){
 
 //  vector<CvConvexityDefect> defects;
 
-//  for( uint i = 0; i < contours.size(); i++ )
+//  for( uint i = 0; i < contours.sizROS_INFO("XXXXXXXXXXXXXX imageCallback rgb");e(); i++ )
 //    {
 //      cv::convexHull( cv::Mat(contours[i]), hull[i], false);
 //      cv::convexHull( cv::Mat(contours[i]), hullsI[i], false);

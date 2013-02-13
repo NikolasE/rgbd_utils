@@ -14,7 +14,7 @@ using namespace std;
 void Elevation_map::lockCells(const cv::Mat & mask, const Cloud& current){
 
   if (locked.cols != mean.cols || locked.rows !=mean.rows || locked.type() == CV_8UC1){
-    locked = cv::Mat(mean.cols,mean.rows, CV_8UC1);
+    locked = cv::Mat(mean.rows,mean.cols, CV_8UC1);
   }
 
   locked.setTo(0);
@@ -32,8 +32,8 @@ void Elevation_map::lockCells(const cv::Mat & mask, const Cloud& current){
 
   locking_active = true;
 
-  cv::namedWindow("blocked");
-  cv::imshow("blocked",locked);
+  //  cv::namedWindow("blocked");
+  //  cv::imshow("blocked",locked);
 
 }
 
@@ -362,6 +362,21 @@ bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
 
   int step = 2; // increase size of gaussian blur accordingly
 
+
+  //  cv::Mat updated(480,640,CV_8UC1);
+  //  updated.setTo(0);
+
+
+  if (locking_active){
+    ROS_INFO("locked: %i %i, hits: %i %i", locked.rows,locked.cols, hits.rows, hits.cols);
+    assert(locked.cols == hits.cols);
+    assert(locked.rows == hits.rows);
+    assert(locked.type() == CV_8UC1);
+  }
+  //  if (locking_active){
+  //    ROS_INFO("Locked: %i %i, cells: %i %i", locked.cols, locked.rows, cell_cnt_x, cell_cnt_y);
+  //  }
+
   for (uint i=0; i<cloud.size(); i += step){
     pcl_Point p = cloud[i];
     cv::Point pos = grid_pos(p);
@@ -369,14 +384,25 @@ bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
     if (pos.x < 0) continue;
     assert(0 <= pos.y && 0 <= pos.x && pos.y < cell_cnt_y && pos.x < cell_cnt_x);
 
-    if (locking_active && locked.at<uchar>(pos.y,pos.x) > 0)
-      continue;
 
+    if (locking_active){
+//      if (!(pos.y < locked.rows && pos.x < locked.cols)){
+//        ROS_INFO("pos: %i %i, size: %i %i", pos.x,pos.y,locked.cols, locked.rows);
+//      }
+
+      if (locked.at<uchar>(pos.y,pos.x) > 0){
+        continue;
+      }
+    }
 
     height_sum.at<float>(pos.y,pos.x) += p.z;
     hits.at<float>(pos.y,pos.x)++;
-
+    //    updated.at<uchar>(pos.y,pos.x) = 255;
   }
+
+
+  //  cv::namedWindow("updated");
+  //  cv::imshow("updated",updated);
 
   int dyn_pixel_cnt = 0;
 
@@ -424,8 +450,22 @@ bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
   model_3d_valid = false;// therefore, the old 3d-model is not longer valid and will be recreated on demand
 
   //small blur to smooth heightfield
-  if (!locking_active)
-    cv::GaussianBlur(mean, mean, cv::Size(3,3),2,2);
+  int size = step; if (size%2 ==0) size++;
+  if (locking_active){
+
+    // blur image but reset values corresponding to detected objects
+    cv::Mat mean_unblured;
+
+    mean.copyTo(mean_unblured);
+    cv::imwrite("data/unblured.png",mean_unblured);
+    cv::GaussianBlur(mean, mean, cv::Size(size,size),0,0);
+    mean_unblured.copyTo(mean,locked);
+    cv::imwrite("data/after_locked.png",mean);
+
+  }else{
+    cv::GaussianBlur(mean, mean, cv::Size(size,size),0,0);
+  }
+
 
   // due to measurement errors, some pixels have a high error. If a hand is visible in the image,
   // more than 500 Pixels are counted.
@@ -460,8 +500,8 @@ cv::Point Elevation_map::grid_pos(const pcl_Point& p){
     return pos;
   }
 
-  pos.x = floor((p.x - x_min_)/cell_size_);
-  pos.y = floor((p.y - y_min_)/cell_size_);
+  pos.x = round((p.x - x_min_)/cell_size_);
+  pos.y = round((p.y - y_min_)/cell_size_);
 
   if (!(pos.x >= 0 && pos.y >=0) || !(pos.x < cell_cnt_x && pos.y < cell_cnt_y)){
     pos.x = pos.y = -1;
@@ -522,7 +562,7 @@ void Elevation_map::getModel(Cloud& model){
       {
         p.x = x_min_+(x+0.5)*cell_size_;
         p.z = mean.at<float>(y,x);
-//        model.push_back(p);
+        //        model.push_back(p);
         model[pos++] = p;
       }
   }
@@ -532,7 +572,7 @@ void Elevation_map::getModel(Cloud& model){
 
   if (int(model.size()) != cell_cnt_x*cell_cnt_y){
     ROS_INFO("size: %zu, %i % i", model.size(),cell_cnt_x,cell_cnt_y);
-    assert(int(model.size()) == cell_cnt_x*cell_cnt_y);
+    // assert(int(model.size()) == cell_cnt_x*cell_cnt_y);
   }
 }
 

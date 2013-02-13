@@ -11,6 +11,17 @@
 using namespace boost;
 using namespace std;
 
+
+void Path_planner::printParameters(){
+  cout << "uphill_factor " << uphill_factor << endl;
+  cout << "max_angle_deg " << max_angle_deg << endl;
+  cout << "height_cost_factor " << height_cost_factor << endl;
+  cout << "path_length_factor " << path_length_factor << endl;
+  cout << "enemy_factor " << enemy_factor << endl;
+  cout << "hillside_cost_factor " << hillside_cost_factor << endl;
+}
+
+
 /**
 * cost depending on local shape.
 *
@@ -65,7 +76,6 @@ float Path_planner::cost_hillside(int x, int y){
 
 }
 
-
 /**
 *
 * Assumes that neighbouring position have a horizontal distance of 1 and that the
@@ -89,7 +99,13 @@ float Path_planner::cost_height(float current, float neighbour){
 
   float diff = neighbour-current;
 
+
   float angle = atan(diff)/M_PI*180;
+
+  // cout << "angle " << angle << endl;
+
+  if (abs(angle) < 1e-3)
+    return 0;
 
   // not traversable (to steep to ascend or descend)
   if (abs(angle) > max_angle_deg)
@@ -111,15 +127,18 @@ float Path_planner::cost_height(float current, float neighbour){
   /*
   * Asymetric cost. Otherwise, climbing a hill and going down again is like walking through a plane
   */
-  // if (neighbour > current) cost *= uphill_factor;
+  if (neighbour > current) cost *= uphill_factor;
 
   // assert(0.5 <= cost && cost <= 1.5);
 
-  return cost*height_cost_factor;
+
+  float c = cost*height_cost_factor;
+
+  // cout << c << endl;
+
+  return c;
 
 }
-
-
 
 inline cv::Point id2pos(int id, int width){
   cv::Point p;
@@ -187,16 +206,17 @@ inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& n
   }
 
 
-  float hillside_cost = cost_hillside(current.x, current.y);
+  float hillside_cost = 0;// cost_hillside(current.x, current.y);
 
 
-  float enemy_costs = enemy_cost.at<float>(neighbour.x,neighbour.y)*enemy_factor;
+  float enemy_costs = enemy_cost.at<float>(neighbour.y,neighbour.x)*enemy_factor;
 
 
-  // ROS_INFO("enemz: %f", enemy_costs);
+  // ROS_INFO("enemy: %f", enemy_costs);
 
   float dist_cost = path_length_factor*sqrt(pow(neighbour.x - current.x,2)+pow(neighbour.y - current.y,2));
-  float total_cost = height_cost+dist_cost+hillside_cost+enemy_costs*enemy_factor;
+
+  float total_cost = height_cost+dist_cost+hillside_cost+enemy_costs;
 
 
   // ROS_INFO("Height: %f, dist: %f, hill: %f", height_cost, dist_cost, hillside_cost);
@@ -211,7 +231,10 @@ inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& n
 
 
 void Path_planner::addEnemy(float strength, int radius, int x, int y){
-  //Enemy e; e.strength = strength; e.x = x; e.y = y;
+  Enemy e; e.strength = strength; e.x = x; e.y = y; e.radius = radius;
+  enemies.push_back(e);
+
+
 
 
   cv::Mat img = cv::Mat(height_map.size(), CV_32FC1);
@@ -232,24 +255,6 @@ void Path_planner::addEnemy(float strength, int radius, int x, int y){
   cv::blur(img,img,cv::Size(r,r));
 
   enemy_cost += img;
-
-  double min_, max_;
-  cv::minMaxLoc(img, &min_,&max_);
-  // cv::Mat scaled = (h2-min_)/(max_-min_);
-
-  ROS_INFO("min: %f %f", min_, max_);
-
-  cv::namedWindow("enemy");
-
-  cv::Mat scaled = (img-min_)/(max_-min_);
-
-  cv::resize(scaled, scaled, cv::Size(),3,3);
-
-  cv::imshow("enemy",scaled);
-
-
-
-
 
 }
 
@@ -276,6 +281,49 @@ void Path_planner::saveHillSideCostImage(){
 
 }
 
+
+void Path_planner::createEnemyMarker(visualization_msgs::Marker& marker, int id){
+
+  marker.points.clear();
+  marker.colors.clear();
+
+  marker.header.frame_id = "/fixed_frame";
+  marker.header.stamp = ros::Time::now();
+  marker.ns = "points_and_lines";
+  marker.action = visualization_msgs::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+
+  marker.type = visualization_msgs::Marker::SPHERE;
+
+
+  marker.color.r = 1.0;
+  marker.color.a = 0.75;
+
+  //  geometry_msgs::Point p;
+
+
+
+  std_msgs::ColorRGBA col;
+  col.a = 1;
+
+  // for (uint i=0; i<enemies.size(); ++i){
+  Enemy & e = enemies[id];
+  pcl_Point  P = model.at(e.x,e.y);
+
+  marker.id = id;
+
+  marker.scale.x = marker.scale.y = e.radius*cell_size_m_*1.5;
+  marker.scale.z = cell_size_m_*10;
+
+
+  marker.pose.position.x = P.x;
+  marker.pose.position.y = P.y;
+  marker.pose.position.z = P.z;
+
+}
+
+
+
 void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
 
 
@@ -289,12 +337,13 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
   marker.pose.orientation.w = 1.0;
 
   marker.type = visualization_msgs::Marker::LINE_STRIP;
-  marker.scale.x = cell_size_m_/2;
+  marker.scale.x = cell_size_m_*2;
 
   marker.color.r = 1.0;
   marker.color.a = 1.0;
 
   geometry_msgs::Point p;
+
 
 
 
@@ -322,6 +371,40 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
 
 
 
+
+void Path_planner::getDistanceMap(cv::Mat& map, bool normed){
+
+  if (!policy_computed){
+    ROS_WARN("Compute policy before requesting distance map!");
+    return;
+  }
+
+  if (map.size != height_map.size || map.type() != height_map.type()){
+    map = cv::Mat(height_map.rows, height_map.cols,height_map.type());
+  }
+
+  int w = map.cols;
+
+  for (int x=0; x<map.cols; ++x)
+    for (int y=0; y<map.rows; ++y){
+      map.at<float>(y,x) =  distance_map_[pos2id(x,y,w)];
+    }
+
+  if (normed){
+
+    double m,x;
+    cv::minMaxLoc(map,&m,&x);
+    map = (map-m)/(x-m);
+    // ROS_INFO("dist: %f %f",m,x);
+  }
+
+
+
+}
+
+
+
+
 /**
 *
 * @param goal   goal position withing height map to which the routes are computed
@@ -329,14 +412,13 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
 * @todo separate graph construction from path planning
 */
 void Path_planner::computePolicy(cv::Point goal){
-
   // ROS_INFO("computePolicy: %i %i", goal_.x, goal_.y);
 
   double min_, max_;
   cv::minMaxLoc(enemy_cost, &min_,&max_);
 
 
-  ROS_INFO("enemy: %f %f", min_, max_);
+  //  ROS_INFO("enemy: %f %f", min_, max_);
 
   goal_ = goal;
 
@@ -357,7 +439,7 @@ void Path_planner::computePolicy(cv::Point goal){
 
   if (apply_smoothing){
     cv::GaussianBlur(normed, normed, cv::Size(3,3),1,1);
-    ROS_INFO("With Smoothing");
+    //    ROS_INFO("With Smoothing");
   }
 
 
@@ -378,6 +460,12 @@ void Path_planner::computePolicy(cv::Point goal){
   // // number of edges that were not added due to
   // int edge_none_cnt = 0;
 
+
+  edges.reserve(num_nodes*(use_four_neighbours?4:8));
+  edge_costs.reserve(num_nodes*(use_four_neighbours?4:8));
+
+  // Takes LONG time (200 ms)
+  timing_start("neighbours");
   for (int x=0; x<normed.cols; ++x){
     current.x = x;
     for (int y=0; y<normed.rows; ++y){
@@ -387,21 +475,6 @@ void Path_planner::computePolicy(cv::Point goal){
       float current_height = normed.at<float>(y,x);
       int current_id = pos2id(x,y, width);
 
-
-      //   if (use_four_neighbours){
-      //    // upwards (addEdges returns false if neighboring pixel is not within image
-      //    if (addEdges(current_id, cv::Point(x,y-1), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
-
-      //    // downwards
-      //    if (addEdges(current_id, cv::Point(x,y+1), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
-
-      //    // left
-      //    if (addEdges(current_id, cv::Point(x-1,y), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
-
-      //    // right
-      //    if (addEdges(current_id, cv::Point(x+1,y), current_height) == EDGE_NORMAL){ valid_transitions++; valid_current++;}
-      //   }else{
-
       // all neighbors
       for (int dx = -1; dx <= 1; dx++)
         for (int dy = -1; dy <= 1; dy++){
@@ -410,34 +483,55 @@ void Path_planner::computePolicy(cv::Point goal){
           if (use_four_neighbours && (abs(dx)+abs(dy)) > 1)
             continue;
 
-
           if (addEdges(current_id, cv::Point(x+dx,y+dy), current_height) == EDGE_NORMAL){
             valid_transitions++; valid_current++;
           }
-          //     }
         }
-
     }
 
   }
+  timing_end("neighbours");
 
   // ROS_INFO("Valids: %f")
   assert(edges.size() == edge_costs.size());
 
-  // ROS_INFO("Created grid with %zu edges", edges.size());
-
+  timing_start("graph_creation");
+  // takes long time... (100ms)
   graph_t g(&edges[0], &edges[0] + edges.size(), &edge_costs[0], num_nodes);
+  timing_end("graph_creation");
 
-  // computation of path
+
   std::vector<vertex_descriptor> p(num_vertices(g));
-  std::vector<int> d(num_vertices(g));
+  distance_map_.reserve(num_vertices(g));
   vertex_descriptor s = vertex(pos2id(goal_.x, goal_.y,width), g);
 
 
-  dijkstra_shortest_paths(g, s, predecessor_map(&p[0]).distance_map(&d[0]));
 
-  ROS_INFO("called dijkstra");
+  // apply dijkstra: predecessor map shows next edge towards target for every vertex
+  // while distance maps contain distance to target for every point
 
+
+  timing_start("dijkstra");
+  dijkstra_shortest_paths(g, s, predecessor_map(&p[0]).distance_map(&distance_map_[0]));
+  timing_end("dijkstra");
+
+
+  //  long time = timing_end("dijkstra",false);
+  //  int E = edges.size();
+  //  int V = normed.cols*normed.rows;
+
+  // cout << E+V*logb(V) << "  " << E << "  " << "  " << V  << "  " << time << endl;
+
+  //  ROS_INFO("Created grid with %zu edges and %i vertices", edges.size(),normed.cols*normed.rows);
+
+
+  //  for (uint i=0; i<distance_map_.size(); ++i){
+  //    cout << i << " " << distance_map_[i] << endl;
+  //  }
+
+  //  cout << "full dist " << distance_map_[pos2id(goal_.x, goal_.y,width)] << endl;
+  //  cout << "n " << distance_map_[pos2id(goal_.x+1, goal_.y,width)] << endl;
+  //  cout << "n " << distance_map_[pos2id(10,10,width)] << endl;
 
   // ros::Time end_time = ros::Time::now();
 
@@ -458,18 +552,7 @@ void Path_planner::computePolicy(cv::Point goal){
     cv::Vec2f dir(best.x-cur.x,best.y-cur.y);
 
     policy.at<cv::Vec2f>(cur.y,cur.x) = dir;
-
-
-    //  if (dir.val[0] == dir.val[1] && dir.val[0] == 0){
-    //   ROS_INFO("Single node: %i %i", cur.x,cur.y);
-    //  }
-
-    //  std::cout << "distance(" << name[*vi] << ") = " << d[*vi] << ", ";
-    //  std::cout << "parent(" << name[*vi] << ") = " << name[ p[*vi]] << std::
   }
-
-
-
   policy_computed = true;
   // return policy;
 
@@ -545,7 +628,6 @@ bool Path_planner::computePath(cv::Point start){
 
     cv::Vec3b color;
 
-
     // show different edge types with different colors
     if (edge_info.second == EDGE_NORMAL)
       color = cv::Vec3b(0,255,0); // green
@@ -562,10 +644,10 @@ bool Path_planner::computePath(cv::Point start){
 
     path_colors.push_back(color);
     path.push_back(cv::Point(current.x,current.y));
-    used_edges.push_back(edge_info);
+    used_edges.push_back(edge_info); // TODO: substract cost for enemy!
   }
 
-  ROS_INFO("Path length: %zu, col length: %zu, cost: %f", path.size(), path_colors.size(), path_costs);
+  ROS_INFO("Path length: %zu , cost: %f", path.size(), path_costs);
 
   assert(path.size() == path_colors.size() && used_edges.size() == path.size()-1);
 

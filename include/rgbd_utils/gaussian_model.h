@@ -92,7 +92,7 @@ public:
 
   int update_cnt;
 
-  void init(int width, int height, int queue_length = 10);
+  void init(int height, int width, int queue_length = 10);
 
   void resetModel();
 
@@ -102,7 +102,7 @@ public:
 
   void update(const Cloud& cloud,cv::Mat* frame_mask = NULL);
 
-  void getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground);
+  void getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground,cv::Mat* dists = NULL);
   void getForeground_prob(const Cloud& cloud, float N, cv::Mat& foreground);
 
 

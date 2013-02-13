@@ -137,7 +137,7 @@ void RunningGaussian::update(double new_x){
 
 
 
-void PixelEnvironmentModel::init(int width, int height, int queue_length){
+void PixelEnvironmentModel::init(int height, int width, int queue_length){
 
   update_cnt = 0;
 
@@ -299,12 +299,28 @@ void PixelEnvironmentModel::getDistance(const Cloud& current, cv::Mat& dists){
 }
 
 
-void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground){
-  if (foreground.rows != height_ || foreground.cols != width_ || foreground.type() != CV_8UC1){
-    foreground = cv::Mat(height_,width_,CV_8UC1);
+void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground, cv::Mat* dists){
+//  if (foreground.rows != height_ || foreground.cols != width_ || foreground.type() != CV_8UC1){
+//    foreground = cv::Mat(height_,width_,CV_8UC1);
+//  }
+
+  ensureSizeAndType(foreground,width_,height_,CV_8UC1);
+
+  if (dists){
+    ensureSizeAndType(*dists,width_,height_,CV_32FC1);
+    dists->setTo(0);
+
+    assert(dists->cols == foreground.cols);
+
   }
 
+
   foreground.setTo(0);
+
+//  float min_ = 1e6;
+//  float max_ = -1e6;
+
+//  int fg_cnt = 0;
 
   for (int y=0; y<height_; ++y)
     for (int x=0; x<width_; ++x){
@@ -320,9 +336,19 @@ void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dis
       // foreground if there was no measurement so far or distance to mean value is larger than max_dist
       if (!inited || current + max_dist < mean){
         foreground.at<uchar>(y,x) = 255;
+       // fg_cnt++;
+        if (dists){
+          float d=  mean-current;
+          dists->at<float>(y,x) = d;
+//          min_ = min(min_,d);
+//          max_ = max(max_,d);
+        }
       }
 
+
     }
+
+//  ROS_INFO("getForeground_dist: %f %f (%i fg pixels)", min_,max_,fg_cnt);
 
 
   //cv::medianBlur(foreground,foreground,3);
