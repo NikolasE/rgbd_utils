@@ -206,7 +206,7 @@ inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& n
   }
 
 
-  float hillside_cost = 0;// cost_hillside(current.x, current.y);
+  float hillside_cost = cost_hillside(current.x, current.y);
 
 
   float enemy_costs = enemy_cost.at<float>(neighbour.y,neighbour.x)*enemy_factor;
@@ -231,24 +231,30 @@ inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& n
 
 
 void Path_planner::addEnemy(float strength, int radius, int x, int y){
-  Enemy e; e.strength = strength; e.x = x; e.y = y; e.radius = radius;
+  Enemy e;
+  e.x = x; e.y = y; e.radius = radius; e.strength = strength;
+
   enemies.push_back(e);
 
-
-
+  e.scale(scale);
 
   cv::Mat img = cv::Mat(height_map.size(), CV_32FC1);
   img.setTo(0);
 
+
+  ROS_INFO("img: %i %i, enemy: %f %f", img.cols, img.rows, e.x,e.y);
+
   //  img.at<float>(y,x) = strength;
 
 
-  int r = radius/2;
+
+
+  int r = e.radius/2;
   if (r%2==1)
     r+=1;
 
 
-  cv::circle(img,cv::Point(x,y),r,CV_RGB(strength,strength,strength),-1);
+  cv::circle(img,cv::Point(e.x,e.y),r,CV_RGB(e.strength,e.strength,e.strength),-1);
 
   // cv::GaussianBlur(img,img,cv::Size(radius,radius),radius);
 
@@ -297,7 +303,7 @@ void Path_planner::createEnemyMarker(visualization_msgs::Marker& marker, int id)
 
 
   marker.color.r = 1.0;
-  marker.color.a = 0.75;
+  marker.color.a = 1;
 
   //  geometry_msgs::Point p;
 
@@ -308,6 +314,7 @@ void Path_planner::createEnemyMarker(visualization_msgs::Marker& marker, int id)
 
   // for (uint i=0; i<enemies.size(); ++i){
   Enemy & e = enemies[id];
+  // ROS_INFO("size: %i %i, pos: %f %f (radius: %f)", model.width,model.height, e.x,e.y, e.radius);
   pcl_Point  P = model.at(e.x,e.y);
 
   marker.id = id;
@@ -322,6 +329,55 @@ void Path_planner::createEnemyMarker(visualization_msgs::Marker& marker, int id)
 
 }
 
+
+
+void Path_planner::createRangeMarker(visualization_msgs::Marker& marker, const std::vector<cv::Point>& contour, int id){
+
+
+
+  marker.points.clear();
+  marker.colors.clear();
+
+  marker.header.frame_id = "/fixed_frame";
+  marker.header.stamp = ros::Time::now();
+  marker.ns = "range";
+  marker.action = visualization_msgs::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+
+  marker.type = visualization_msgs::Marker::LINE_STRIP;
+  marker.scale.y = marker.scale.z = marker.scale.x = cell_size_m_*3;
+
+  marker.color.b = 1.0;
+  marker.color.a = 1.0;
+
+  geometry_msgs::Point p;
+
+  std_msgs::ColorRGBA col;
+  col.a = 1;
+
+  uint N = contour.size();
+
+  if (N==0)
+    return;
+
+  for (uint i=0; i<N+1; ++i){
+    pcl_Point  P = model.at(contour[i%N].x,contour[i%N].y);
+
+//    col.r = path_colors[i].val[0]/255;
+//    col.g = path_colors[i].val[1]/255;
+//    col.b = path_colors[i].val[2]/255;
+
+//    marker.colors.push_back(col);
+
+    p.x = P.x;
+    p.y = P.y;
+    p.z = P.z;
+
+    marker.points.push_back(p);
+  }
+
+
+}
 
 
 void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
@@ -369,37 +425,63 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
 }
 
 
+void Path_planner::getDistanceImage(cv::Mat & img, float* threshold){
+  if (img.size != height_map.size || img.type() != height_map.type()){
+    img = cv::Mat(height_map.rows, height_map.cols,height_map.type());
+  }
+
+  img.setTo(0);
+
+  int width = img.cols;
+  for (int x=0; x<img.cols; ++x)
+    for (int y = 0; y<img.rows; ++y){
+      float d = distance_map_[pos2id(x,y,width)];
+      if (threshold && d>*threshold)
+        continue;
+      img.at<float>(y,x) = d;
+    }
+
+  cv::resize(img,img,cv::Size(), 1/scale,1/scale, CV_INTER_CUBIC);
+}
 
 
 
-void Path_planner::getDistanceMap(cv::Mat& map, bool normed){
 
-  if (!policy_computed){
-    ROS_WARN("Compute policy before requesting distance map!");
+void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold, vector<cv::Point>& contour){
+
+  contour.clear();
+  cv::Mat mask;
+  distanceMap.copyTo(mask);
+
+//  double m,x;
+//  cv::minMaxLoc(mask, &m,&x);
+//  ROS_INFO("ragnge: %f %f   %f",m,x,threshold);
+
+
+  cv::threshold(mask,mask,threshold,255,CV_THRESH_BINARY_INV); // remove everything above threshold, set rest to 1
+  cv::Mat cpy;
+  mask.convertTo(cpy, CV_8UC1);
+
+  cv::namedWindow("threshold");
+  cv::imshow("threshold", mask);
+
+  std::vector<std::vector<cv::Point> > contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::findContours(cpy, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+
+  if (contours.size() == 0)
+    return;
+
+  for (uint i=0; i<contours.size(); ++i){
+    if (hierarchy[i][3] != -1) // ignore starting cell
+      continue;
+
+    contour = contours[i];
     return;
   }
 
-  if (map.size != height_map.size || map.type() != height_map.type()){
-    map = cv::Mat(height_map.rows, height_map.cols,height_map.type());
-  }
 
-  int w = map.cols;
-
-  for (int x=0; x<map.cols; ++x)
-    for (int y=0; y<map.rows; ++y){
-      map.at<float>(y,x) =  distance_map_[pos2id(x,y,w)];
-    }
-
-  if (normed){
-
-    double m,x;
-    cv::minMaxLoc(map,&m,&x);
-    map = (map-m)/(x-m);
-    // ROS_INFO("dist: %f %f",m,x);
-  }
-
-
-
+  ROS_INFO("contour: %i", contour.size());
 }
 
 
@@ -412,12 +494,14 @@ void Path_planner::getDistanceMap(cv::Mat& map, bool normed){
 * @todo separate graph construction from path planning
 */
 void Path_planner::computePolicy(cv::Point goal){
+
+  goal.x *= scale;
+  goal.y *= scale;
+
   // ROS_INFO("computePolicy: %i %i", goal_.x, goal_.y);
 
-  double min_, max_;
-  cv::minMaxLoc(enemy_cost, &min_,&max_);
-
-
+  //  double min_, max_;
+  //  cv::minMaxLoc(enemy_cost, &min_,&max_);
   //  ROS_INFO("enemy: %f %f", min_, max_);
 
   goal_ = goal;
@@ -434,8 +518,7 @@ void Path_planner::computePolicy(cv::Point goal){
 
   // normalize so that points with the same height have a distance of 1 and heights
   // are measured in multiples of the cell size
-  normed = height_map/cell_size_m_;
-
+  normed = height_map/cell_size_m_*scale;
 
   if (apply_smoothing){
     cv::GaussianBlur(normed, normed, cv::Size(3,3),1,1);
@@ -509,8 +592,6 @@ void Path_planner::computePolicy(cv::Point goal){
 
   // apply dijkstra: predecessor map shows next edge towards target for every vertex
   // while distance maps contain distance to target for every point
-
-
   timing_start("dijkstra");
   dijkstra_shortest_paths(g, s, predecessor_map(&p[0]).distance_map(&distance_map_[0]));
   timing_end("dijkstra");
@@ -559,7 +640,13 @@ void Path_planner::computePolicy(cv::Point goal){
 }
 
 
+
+
 bool Path_planner::computePath(cv::Point start){
+
+  start.x *= scale;
+  start.y *= scale;
+
   assert(start.x >=0 && start.x < policy.cols);
 
   if (!policy_computed){
@@ -593,7 +680,7 @@ bool Path_planner::computePath(cv::Point start){
 
   float path_costs = 0;
 
-  path.push_back(cv::Point(start.x,start.y));
+  path.push_back(cv::Point(start.x/scale,start.y/scale));
   path_colors.push_back(cv::Vec3b(255,0,0));
 
   cv::Point current = start;
@@ -630,10 +717,10 @@ bool Path_planner::computePath(cv::Point start){
 
     // show different edge types with different colors
     if (edge_info.second == EDGE_NORMAL)
-      color = cv::Vec3b(0,255,0); // green
+      color = cv::Vec3b(255,255,255); // black
 
     if (edge_info.second == EDGE_WATER)
-      color = cv::Vec3b(0,0,255); // blue
+      color = cv::Vec3b(255,0,0); // red
 
     if (edge_info.second == EDGE_TOO_STEEP)
       color = cv::Vec3b(255,0,0); // red
@@ -643,7 +730,7 @@ bool Path_planner::computePath(cv::Point start){
 #endif
 
     path_colors.push_back(color);
-    path.push_back(cv::Point(current.x,current.y));
+    path.push_back(cv::Point(current.x/scale,current.y/scale));
     used_edges.push_back(edge_info); // TODO: substract cost for enemy!
   }
 

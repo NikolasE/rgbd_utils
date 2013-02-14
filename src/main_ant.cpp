@@ -6,12 +6,23 @@ using namespace std;
 #include <dynamic_reconfigure/server.h>
 
 Path_planner planner;
-ros::Publisher pub_model,pub_marker,pub_marker_enemy;
+ros::Publisher pub_model,pub_marker,pub_marker_enemy, pub_marker_range;
 cv::Mat h2;
-visualization_msgs::Marker marker;
+visualization_msgs::Marker marker_path;
 visualization_msgs::Marker marker_enemies;
+visualization_msgs::Marker marker_range;
 
 bool do_planning = false;
+
+float dist_threshold = 50;
+
+void normalize(cv::Mat &img){
+  double m,x;
+  cv::minMaxLoc(img,&m,&x);
+  img = (img-m)/(x-m);
+}
+
+
 
 
 float cell_size_m_ = 0.003;
@@ -37,8 +48,8 @@ void doPlanning(){
   int h = h2.rows;
 
   planner.removeEnemies();
-  planner.addEnemy(10,20,w/2+10,h/2+5);
-  planner.addEnemy(10,20,w/2-10,h/2+5);
+  planner.addEnemy(10,20,w-10,h/2);
+  planner.addEnemy(10,20,15,h/2+5);
 
 
   //      planner.addEnemy(10,10,w/2+30,h/2);
@@ -56,12 +67,12 @@ void doPlanning(){
 
   cv::namedWindow("enemy");
   cv::Mat scaled1 = (planner.enemy_cost-min_1)/(max_1-min_1);
-  cv::resize(scaled1, scaled1, cv::Size(),3,3);
+  cv::resize(scaled1, scaled1, cv::Size(),3/planner.scale,3/planner.scale);
   cv::imshow("enemy",scaled1);
 
 
-  cv::Point goal(w-1,h-1);
-  cv::Point start(0,0);
+  cv::Point start(w-1,h-1);
+  cv::Point goal(30,60);
 
 
   timing_start("policy");
@@ -69,14 +80,29 @@ void doPlanning(){
   timing_end("policy");
 
 
+  cv::Mat dist_map;
+  planner.getDistanceImage(dist_map);
+
+
+  vector<cv::Point> contour;
+  planner.getRangeOfMotion(dist_map,dist_threshold,contour);
+
+  planner.createRangeMarker(marker_range, contour);
+
+
+  normalize(dist_map);
+  cv::resize(dist_map,dist_map,cv::Size(), 3,3);
+  cv::namedWindow("dist_map");
+  cv::imshow("dist_map",dist_map);
+
   planner.computePath(start);
 
 
-  cv::Mat dists;
-  planner.getDistanceMap(dists,true);
-  cv::resize(dists, dists, cv::Size(),3,3);
-  cv::namedWindow("dist");
-  cv::imshow("dist",dists);
+//  cv::Mat dists;
+//  planner.getDistanceMap(dists,true);
+//  cv::resize(dists, dists, cv::Size(),3,3);
+//  cv::namedWindow("dist");
+//  cv::imshow("dist",dists);
 
   // ROS_INFO("start: %i %i, end: %i %i", goal.x,goal.y, start.x,start.y);
 
@@ -95,7 +121,7 @@ void doPlanning(){
 
   cv::waitKey(20);
 
-  planner.createPathMarker(marker);
+   planner.createPathMarker(marker_path);
   // planner.createEnemyMarker(marker_enemies);
 
 }
@@ -114,6 +140,11 @@ void paramCallback(const rgbd_utils::path_paramsConfig& config, uint32_t level){
   // planner.setPathLengthFactor(config.ant_path_length_factor);
   planner.enemy_factor = config.ant_enemy_factor;
 
+  planner.setScale(config.scale);
+
+
+  dist_threshold = config.dist_treshold;
+
   doPlanning();
 }
 
@@ -129,6 +160,7 @@ int main(int argc, char ** argv){
   
   pub_marker = nh.advertise<visualization_msgs::Marker>("/ant/path", 1);
   pub_marker_enemy = nh.advertise<visualization_msgs::Marker>("/ant/enemies", 1);
+  pub_marker_range = nh.advertise<visualization_msgs::Marker>("/ant/range", 1);
 
 
   pub_model =  nh.advertise<Cloud>("/ant/model", 100);
@@ -149,12 +181,15 @@ int main(int argc, char ** argv){
   }
   if (argc == 2){
     height = cv::imread(argv[1],0);
-    height.convertTo(h2,CV_32FC1,1/250.0);
+    height.convertTo(h2,CV_32FC1,1/255.0);
   }
 
-  if (argc < 2)
-    assert(argc > 0);
+  if (argc < 2){
+    height = cv::imread("/usr/gast/engelhan/ros/master_thesis/projector_calibration/img/height.png",0);
+    height.convertTo(h2,CV_32FC1,1/255.0);
+  }
 
+  planner.setScale(0.5);
 
   //
 
@@ -214,8 +249,8 @@ int main(int argc, char ** argv){
     }
 
     pub_model.publish(msg);
-
-    pub_marker.publish(marker);
+    pub_marker_range.publish(marker_range);
+    pub_marker.publish(marker_path);
 
     r.sleep();
   }

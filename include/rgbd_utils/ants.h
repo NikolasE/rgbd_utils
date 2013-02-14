@@ -63,7 +63,14 @@ typedef std::map<Edge, Edge_info, Edge_cmp> Edge_map;
 struct Enemy {
   float strength;
   float radius;
-  int x,y;
+  float x,y;
+
+  void scale(float s){
+    strength*=s;
+    radius*=s;
+    x*=s;
+    y*=s;
+  }
 };
 
 
@@ -117,6 +124,9 @@ struct Path_planner {
 
 
 
+
+
+
   float hillside_cost_factor, path_length_factor;
 
   std::vector<cv::Point> path;
@@ -128,8 +138,17 @@ struct Path_planner {
 
 public:
 
+
+  void getDistanceImage(cv::Mat & img, float *threshold = NULL);
+
+  float scale;
+
+  void setScale(float new_scale){scale = new_scale;}
+
   void printParameters();
 
+
+  void getRangeOfMotion(const cv::Mat& distanceMap, float threshold, std::vector<cv::Point>& contour);
   void getDistanceMap(cv::Mat& map, bool normed = true);
 
   /// height of each point in the grid
@@ -166,6 +185,7 @@ public:
     uphill_factor = 1;
     path_length_factor = 3;
     enemy_factor = 1;
+    scale = 1;
   }
 
   /**
@@ -174,14 +194,25 @@ public:
   void setHeightMap(const cv::Mat& height, float cell_size_m = 0.05, bool compute_model = true){
     assert(height.type() == CV_32FC1);
     height.copyTo(height_map);
-    policy_computed = false;
-    cell_size_m_ = cell_size_m;
-
-    enemy_cost = cv::Mat(height.size(),CV_32FC1);
-    enemy_cost.setTo(0);
 
     if (compute_model)
       model = createModel();
+
+
+
+    // if (abs(scale-1) > 0.001){
+    ROS_INFO("SCaling height map: %f", scale);
+    cv::resize(height_map, height_map,cv::Size(), scale, scale, CV_INTER_CUBIC);
+    // }
+
+
+    policy_computed = false;
+    cell_size_m_ = cell_size_m;
+
+    enemy_cost = cv::Mat(height_map.size(),CV_32FC1);
+    enemy_cost.setTo(0);
+
+
   }
 
   /**
@@ -276,6 +307,9 @@ public:
 
   void createEnemyMarker(visualization_msgs::Marker& marker, int id);
   void createPathMarker(visualization_msgs::Marker& marker);
+  void createRangeMarker(visualization_msgs::Marker& marker, const std::vector<cv::Point>& contour, int id = 0);
+
+
   void publishPath(ros::Publisher & pub_marker);
 
 
