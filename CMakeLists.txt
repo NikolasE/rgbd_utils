@@ -69,13 +69,13 @@ ENDIF (WITH_LIBGEOMETRY)
 
 
 
-#rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/gaussian_model.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp )#src/exp_map.cpp)
-#rosbuild_link_boost(rgbd_utils thread signals system)
+rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/gaussian_model.cpp src/projector_calibrator.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp )#src/exp_map.cpp)
+rosbuild_link_boost(rgbd_utils thread signals system)
 
 #rosbuild_add_executable(detection_demo src/main_test.cpp src/gaussian_model.cpp src/pinch_detection.cpp)
 #target_link_libraries(detection_demo rgbd_utils)
 
-rosbuild_add_executable(ants src/main_ant.cpp src/ants.cpp)
+#rosbuild_add_executable(ants src/main_ant.cpp src/ants.cpp)
 #target_link_libraries(ants rgbd_utils)
 
 if (WITH_LIBGEOMETRY)

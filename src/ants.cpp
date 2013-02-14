@@ -447,6 +447,13 @@ void Path_planner::getDistanceImage(cv::Mat & img, float* threshold){
 
 
 
+void Path_planner::getRangeOfMotion(float threshold, vector<cv::Point>& contour){
+  cv::Mat map;
+  getDistanceImage(map);
+  getRangeOfMotion(map, threshold,contour);
+}
+
+
 void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold, vector<cv::Point>& contour){
 
   contour.clear();
@@ -455,15 +462,14 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
 
 //  double m,x;
 //  cv::minMaxLoc(mask, &m,&x);
-//  ROS_INFO("ragnge: %f %f   %f",m,x,threshold);
-
+//  ROS_INFO("Range: %f to %f  threshold: %f",m,x,threshold);
 
   cv::threshold(mask,mask,threshold,255,CV_THRESH_BINARY_INV); // remove everything above threshold, set rest to 1
   cv::Mat cpy;
   mask.convertTo(cpy, CV_8UC1);
 
-  cv::namedWindow("threshold");
-  cv::imshow("threshold", mask);
+//  cv::namedWindow("threshold");
+//  cv::imshow("threshold", mask);
 
   std::vector<std::vector<cv::Point> > contours;
   std::vector<cv::Vec4i> hierarchy;
@@ -481,7 +487,7 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
   }
 
 
-  ROS_INFO("contour: %i", contour.size());
+//  ROS_INFO("contour: %zu", contour.size());
 }
 
 
@@ -494,6 +500,12 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
 * @todo separate graph construction from path planning
 */
 void Path_planner::computePolicy(cv::Point goal){
+
+
+  // update only here (otherwise this value could be changed between policy computation and path extraction)
+  use_four_neighbours = use_four_neighbours_stored;
+  scale = scale_stored;
+
 
   goal.x *= scale;
   goal.y *= scale;

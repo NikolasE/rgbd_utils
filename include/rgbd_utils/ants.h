@@ -115,6 +115,8 @@ struct Path_planner {
   /// true if only four neighbours should be used
   bool use_four_neighbours;
 
+  bool use_four_neighbours_stored;
+
   EDGE_TYPE addEdges(const int current_id, const cv::Point& neighbour, float current_height);
 
   float cost_height(float current, float neighbour);
@@ -141,15 +143,14 @@ public:
 
   void getDistanceImage(cv::Mat & img, float *threshold = NULL);
 
-  float scale;
+  float scale,scale_stored;
 
-  void setScale(float new_scale){scale = new_scale;}
+  void setScale(float new_scale){scale_stored = new_scale;}
 
   void printParameters();
 
-
+  void getRangeOfMotion(float threshold, std::vector<cv::Point>& contour);
   void getRangeOfMotion(const cv::Mat& distanceMap, float threshold, std::vector<cv::Point>& contour);
-  void getDistanceMap(cv::Mat& map, bool normed = true);
 
   /// height of each point in the grid
   cv::Mat height_map;
@@ -171,12 +172,17 @@ public:
   void saveHillSideCostImage();
 
 
-  Path_planner(): use_four_neighbours(false){
+
+
+  Path_planner(){
     allowed_water_depth = 0.001;
     untraversable_cost = 100000;
     policy_computed = false;
     apply_smoothing = false;
     with_water = false;
+
+    scale_stored = 1;
+    use_four_neighbours_stored = false;
 
 
     max_angle_deg = 45;
@@ -198,10 +204,8 @@ public:
     if (compute_model)
       model = createModel();
 
-
-
     // if (abs(scale-1) > 0.001){
-    ROS_INFO("SCaling height map: %f", scale);
+    ROS_INFO("Scaling height map: %f", scale);
     cv::resize(height_map, height_map,cv::Size(), scale, scale, CV_INTER_CUBIC);
     // }
 
@@ -273,7 +277,7 @@ public:
 
 
   /// setter to chose between four and eight neighbours in search graph
-  void setFourNeighbours(bool four_neighbours){use_four_neighbours = four_neighbours;}
+  void setFourNeighbours(bool four_neighbours){use_four_neighbours_stored = four_neighbours;}
 
 
   Cloud createModel(){

@@ -150,9 +150,6 @@ void paramCallback(const rgbd_utils::path_paramsConfig& config, uint32_t level){
 
 
 
-
-
-
 int main(int argc, char ** argv){
 
   ros::init(argc,argv,"ant_test");

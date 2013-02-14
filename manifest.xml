@@ -16,6 +16,7 @@
   <depend package="visualization_msgs"/>
   <depend package="cv_bridge"/>
   <depend package="pcl"/>
+  <depend package="image_geometry"/>
   <export>
     <cpp cflags="-I${prefix}/include -I${prefix}/cfg/cpp" lflags="-L${prefix}/lib -lros"/>
   </export>
