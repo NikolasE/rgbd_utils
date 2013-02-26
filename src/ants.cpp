@@ -221,6 +221,13 @@ inline EDGE_TYPE Path_planner::addEdges(const int current_id, const cv::Point& n
 
   // ROS_INFO("Height: %f, dist: %f, hill: %f", height_cost, dist_cost, hillside_cost);
 
+
+  if (total_cost <= 0){
+    ROS_WARN("COST WITH NON-POSITIVE Weight!, %f = %f + %f + %f + %f", total_cost, height_cost,dist_cost,hillside_cost,enemy_costs);
+    total_cost = 0.001;
+  }
+
+
   edges.push_back(edge);
   edge_costs.push_back(total_cost);
   edge_map[edge] = Edge_info(total_cost,EDGE_NORMAL);

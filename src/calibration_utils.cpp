@@ -13,6 +13,33 @@
 using namespace std;
 
 
+cv::Mat normalize_mat(const cv::Mat& img){
+  double m,x;
+  cv::minMaxLoc(img,&m,&x);
+  cv::Mat n;
+  n = (img-x)/(m-x);
+  return n;
+}
+
+Eigen::Affine3f mat2Eigen(const cv::Mat& mat){
+  Eigen::Affine3f trafo;
+  mat2Eigen(mat,trafo);
+  return trafo;
+}
+
+void mat2Eigen(const cv::Mat& mat, Eigen::Affine3f& trafo){
+  assert(mat.type() == CV_64FC1 && mat.cols == 4 && mat.rows == 3);
+
+  for (uint y = 0; y<3; ++y)
+    for (uint x = 0; x<4; ++x){
+      trafo(y,x) = mat.at<double>(y,x);
+    }
+
+  trafo(3,0) = trafo(3,1) = trafo(3,2) = 0;
+  trafo(3,3) = 1;
+
+}
+
 
 
 pcl_Point getTransformedPoint(pcl_Point p, const Eigen::Affine3f& trafo){
@@ -39,11 +66,11 @@ cv::Scalar getColor(int i){
 
   switch (i%5){
   case 0:
-    return CV_RGB(255,0,0);
+    return CV_RGB(0,0,255);
   case 1:
     return CV_RGB(0,255,0);
   case 2:
-    return CV_RGB(0,0,255);
+    return CV_RGB(255,0,0);
   case 3:
     return CV_RGB(255,255,0);
   case 4:
@@ -53,6 +80,9 @@ cv::Scalar getColor(int i){
   default:
     assert(false);
   }
+
+
+  return cv::Scalar::all(255);
 
 }
 
@@ -120,6 +150,11 @@ float dist_sq(const pcl_Point& a,const pcl_Point& b){
 /// result |a-b|
 float dist(const pcl_Point& a,const pcl_Point& b){
   return norm(sub(a,b));
+}
+
+
+float dist(const cv::Point2f& a,const cv::Point2f& b){
+  return sqrt(pow(a.x-b.x,2)+pow(a.y-b.y,2));
 }
 
 /**
@@ -658,7 +693,7 @@ bool loadMat(const string path, const string name, cv::Mat& mat){
 
   cv::FileStorage fs(fn, cv::FileStorage::READ);
   if (!fs.isOpened()){
-    ROS_WARN("Could not read %s", fn);
+    ROS_WARN("Could not read %s from %s", name.c_str(), fn);
     return false;
   }
 
@@ -1261,6 +1296,9 @@ void applyPerspectiveTrafo(const cv::Point3f& p,const cv::Mat& P, cv::Point2f& p
   cv::Mat P4 = cv::Mat(4,1,CV_64FC1);
   cv::Mat P3 = cv::Mat(3,1,CV_64FC1);
 
+  assert(P.rows == 3 && P.cols == 4);
+
+
   P4.at<double>(0,0) = p.x;
   P4.at<double>(1,0) = p.y;
   P4.at<double>(2,0) = p.z;
@@ -1319,6 +1357,19 @@ void applyHomography(const cv::Point2f& p,const cv::Mat& H, cv::Point2f& p_){
   p_.x = pc.at<double>(0)/z;
   p_.y = pc.at<double>(1)/z;
 }
+
+
+/**
+* @param M 4x4 Matrix that will be printed to stdout
+*/
+void printMatrix(const Eigen::Matrix4d& M){
+  for (uint i=0;i<4; ++i){
+    for (uint j=0;j<4; ++j)
+      cout << M(i,j) << " ";
+    cout << endl;
+  }
+}
+
 
 /**
 * @param M Affine Transformation that will be printed to stdout
@@ -1496,9 +1547,7 @@ Cloud transferColorToMesh(const cv::Mat& color, Cloud& mesh, const cv::Mat* mask
 
   }
 
-
-
-  Cloud result;
+  Cloud result; result.reserve(mesh.size());
   pcl_Point nap; nap.x = nap.y = nap.z =  std::numeric_limits<float>::quiet_NaN();
 
 
@@ -1559,7 +1608,7 @@ void waterVisualizationAlpha(cv::Mat& img, cv::Mat& alpha_channel, const cv::Mat
   // alpha_channel = cv::Mat(img.rows, img.cols, CV_32FC1);
   // cv::Mat new_color = cv::Mat(img.rows, img.cols, CV_8UC3);
 
-assert(water_depth.type() == CV_32FC1);
+  assert(water_depth.type() == CV_32FC1);
   //  new_color.setTo(0);
 
   img.setTo(0);
@@ -1845,35 +1894,6 @@ void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, f
 }
 
 
-/**
-*
-* @param y_direction direction of y_direction
-* @param z_direction direction of z_axis
-* @param origin origin of coordinate system
-* @param transformation transformation into the system defined by the origin and the y- and z-axis (right handed system)
-*/
-void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_direction,
-                                                 const Eigen::Vector3f& origin, Eigen::Affine3f& transformation){
-
-
-  Eigen::Vector3f y = y_direction.normalized();
-  Eigen::Vector3f z = z_direction.normalized();
-  Eigen::Vector3f x = y.cross(z);
-
-
-  Eigen::Affine3f sub = Eigen::Affine3f::Identity();
-  sub(0,3) = -origin[0];
-  sub(1,3) = -origin[1];
-  sub(2,3) = -origin[2];
-
-
-  transformation = Eigen::Affine3f::Identity();
-  transformation(0,0)=x[0]; transformation(0,1)=x[1]; transformation(0,2)=x[2]; // x^t
-  transformation(1,0)=y[0]; transformation(1,1)=y[1]; transformation(1,2)=y[2]; // y^t
-  transformation(2,0)=z[0]; transformation(2,1)=z[1]; transformation(2,2)=z[2]; // z^t
-
-  transformation = transformation*sub;
-}
 
 /**
 *
@@ -1980,4 +2000,101 @@ void sendTrafo(const std::string& start_frame, const std::string& goal_frame, co
 
 }
 
+
+
+void build_opengl_projection_for_intrinsics( Eigen::Matrix4d &frustum, const cv::Mat cam_matrix, int img_width, int img_height, double near_clip, double far_clip, int *viewport){
+
+  assert(cam_matrix.cols == 3);
+  assert(cam_matrix.type() == CV_64FC1);
+
+  float f_x = cam_matrix.at<double>(0,0);
+  float skew = cam_matrix.at<double>(0,1);
+  float f_y = cam_matrix.at<double>(1,1);
+
+  float c_x = cam_matrix.at<double>(0,2);
+  float c_y = cam_matrix.at<double>(1,2);
+
+  build_opengl_projection_for_intrinsics(frustum,f_x,f_y,skew,c_x,c_y,img_width,img_height,near_clip, far_clip,viewport);
+}
+
+
+
+void build_opengl_projection_for_intrinsics( Eigen::Matrix4d &frustum, const cv::Mat cam_matrix, int img_width, int img_height, double near_clip, double far_clip, int *viewport);
+
+
+/**
+ @brief basic function to produce an OpenGL projection matrix and associated viewport parameters
+ which match a given set of camera intrinsics. This is currently written for the Eigen linear
+ algebra library, however it should be straightforward to port to any 4x4 matrix class.
+ @param[out] frustum Eigen::Matrix4d projection matrix.  Eigen stores these matrices in column-major (i.e. OpenGL) order.
+ @param[out] viewport 4-component OpenGL viewport values, as might be retrieved by glGetIntegerv( GL_VIEWPORT, &viewport[0] )
+ @param[in]  f_x x-axis focal length, from camera intrinsic matrix
+ @param[in]  f_y y-axis focal length, from camera intrinsic matrix
+ @param[in]  skew  x and y axis skew, from camera intrinsic matrix
+ @param[in]  c_x image origin x-coordinate, from camera intrinsic matrix
+ @param[in]  c_y image origin y-coordinate, from camera intrinsic matrix
+ @param[in]  img_width image width, in pixels
+ @param[in]  img_height image height, in pixels
+ @param[in]  near_clip near clipping plane z-location, can be set arbitrarily > 0, controls the mapping of z-coordinates for OpenGL
+ @param[in]  far_clip  far clipping plane z-location, can be set arbitrarily > near_clip, controls the mapping of z-coordinate for OpenGL
+ * http://jamesgregson.blogspot.de/2011/11/matching-calibrated-cameras-with-opengl.html
+*/
+void build_opengl_projection_for_intrinsics( Eigen::Matrix4d &frustum,  double f_x, double f_y, double skew, double c_x, double c_y, int img_width, int img_height, double near_clip, double far_clip, int *viewport){
+
+  // These parameters define the final viewport that is rendered into by
+  // the camera.
+  double L = 0;
+  double R = img_width;
+  double B = 0;
+  double T = img_height;
+
+  // near and far clipping planes, these only matter for the mapping from
+  // world-space z-coordinate into the depth coordinate for OpenGL
+  double N = near_clip;
+  double F = far_clip;
+
+  // set the viewport parameters
+  if (viewport){
+    viewport[0] = L;
+    viewport[1] = B;
+    viewport[2] = R-L;
+    viewport[3] = T-B;
+  }
+
+  // construct an orthographic matrix which maps from projected
+  // coordinates to normalized device coordinates in the range
+  // [-1, 1].  OpenGL then maps coordinates in NDC to the current
+  // viewport
+  Eigen::Matrix4d ortho = Eigen::Matrix4d::Zero();
+  ortho(0,0) =  2.0/(R-L); ortho(0,3) = -(R+L)/(R-L);
+  ortho(1,1) =  2.0/(T-B); ortho(1,3) = -(T+B)/(T-B);
+  ortho(2,2) = -2.0/(F-N); ortho(2,3) = -(F+N)/(F-N);
+  ortho(3,3) =  1.0;
+
+  // construct a projection matrix, this is identical to the
+  // projection matrix computed for the intrinsicx, except an
+  // additional row is inserted to map the z-coordinate to
+  // OpenGL.
+  Eigen::Matrix4d tproj = Eigen::Matrix4d::Zero();
+  tproj(0,0) = f_x; tproj(0,1) = skew; tproj(0,2) = c_x;
+  tproj(1,1) = f_y; tproj(1,2) = c_y;
+  tproj(2,2) = 1;// -(N+F); tproj(2,3) = -N*F;
+  tproj(3,2) = 1.0;
+
+  // resulting OpenGL frustum is the product of the orthographic
+  // mapping to normalized device coordinates and the augmented
+  // camera intrinsic matrix
+  frustum = /*ortho**/tproj;
+}
+
+
+void drawMarker(cv::Mat& img, cv::Point2f px, cv::Scalar color, float size){
+  assert(img.type() == CV_8UC3);
+  cv::line(img, cv::Point(px.x,px.y-size),cv::Point(px.x,px.y+size),CV_RGB(0,0,255),3);
+  cv::line(img, cv::Point(px.x-size,px.y),cv::Point(px.x+size,px.y),CV_RGB(0,0,255),3);
+
+  //    cv::circle(img, pr, r, CV_RGB(255,0,0), 4);
+  cv::circle(img, px, 5, color, -1);
+
+}
 

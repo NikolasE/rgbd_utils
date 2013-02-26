@@ -31,6 +31,18 @@
 
 
 
+cv::Mat normalize_mat(const cv::Mat& img);
+
+
+void build_opengl_projection_for_intrinsics( Eigen::Matrix4d &frustum, const cv::Mat cam_matrix, int img_width, int img_height, double near_clip, double far_clip, int *viewport = NULL);
+
+void build_opengl_projection_for_intrinsics( Eigen::Matrix4d &frustum, double f_x, double f_y, double skew, double c_x, double c_y, int img_width, int img_height, double near_clip, double far_clip, int *viewport = NULL );
+
+
+void mat2Eigen(const cv::Mat& mat, Eigen::Affine3f& trafo);
+Eigen::Affine3f mat2Eigen(const cv::Mat& mat);
+
+
 void sendTrafo(const std::string& start_frame, const std::string& goal_frame, const Eigen::Affine3f& trafo );
 
 
@@ -77,14 +89,10 @@ float dist(const pcl_Point& a,const pcl_Point& b);
 float dist_sq(const pcl_Point& a,const pcl_Point& b);
 float norm(const pcl_Point& p);
 
-
+float dist(const cv::Point2f& a,const cv::Point2f& b);
 cv::Scalar getColor(int i);
 
 pcl_Point setLength(const pcl_Point& p, float s);
-
-void computeTransformationFromYZVectorsAndOrigin(const Eigen::Vector3f& y_direction, const Eigen::Vector3f& z_axis,
-  const Eigen::Vector3f& origin, Eigen::Affine3f& transformation);
-
 
 
 void showPath(cv::Mat& img, const pcl::PolygonMesh& mesh,const cv::Mat& proj_matrix, const std::vector<cv::Point>* path,  const std::vector<cv::Vec3b>* colors = NULL);
@@ -93,6 +101,7 @@ void showPath(cv::Mat& img, const pcl::PolygonMesh& mesh,const cv::Mat& proj_mat
 void project3D(const cv::Point2f px, const cv::Mat P, float W,  cv::Point3f& out);
 
 
+void drawMarker(cv::Mat& img, cv::Point2f pos, cv::Scalar color, float size);
 
 void projectCloudIntoImage(const Cloud& cloud, const cv::Mat& P, cv::Mat& img, float z_max, float z_min, float color_height = 0.1);
 
@@ -156,6 +165,7 @@ bool saveAffineTrafo(const Eigen::Affine3f& M, const char* filename);
 bool loadAffineTrafo(Eigen::Affine3f& M, const char* filename);
 
 void printTrafo(const Eigen::Affine3f& M);
+void printMatrix(const Eigen::Matrix4d& M);
 
 void update_min_filtered_cloud(Cloud& min_cloud, const Cloud& current);
 

@@ -8,8 +8,6 @@
 using namespace std;
 
 #include "rgbd_utils/projector_calibrator.h"
-#include "rgbd_utils/calibration_utils.h"
-
 
 
 /**
@@ -58,37 +56,77 @@ float Projector_Calibrator::eval_projection_matrix_Checkerboard(Cloud& corners, 
   cv::cornerSubPix(gray, detected_corners, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 2000, 0.0001));
 
 
-  cv::Mat col_cpy; input_image.copyTo(col_cpy);
-  float error = 0;
+  //  cv::Mat distortion_image(projector_image.size(),CV_8UC3);
+  //  distortion_image.setTo(255);
+
+
+  float error_cv_with = 0;
+  float error_cv_without = 0;
+  float error_dlt_norm = 0;
+
   for (uint i=0; i< detected_corners.size(); ++i){
-
-
     pcl_Point mean = getInterpolatedPoint(detected_corners[i]);
+
+    cv::Point2f px_cv_with, px_cv_without, px_dlt_with;
+    cal_cv_with_dist.projectPoint(mean, px_cv_with);
+    cal_cv_no_dist.projectPoint(mean, px_cv_without);
+    cal_dlt_with_norm.projectPoint(mean, px_dlt_with);
+
+
+    error_cv_with += dist(px_cv_with,current_projector_corners[i]);
+    error_cv_without += dist(px_cv_without,current_projector_corners[i]);
+    error_dlt_norm += dist(px_dlt_with,current_projector_corners[i]);
 
     corners.push_back(mean);
 
-    cv::Point2f pr = applyPerspectiveTrafo(mean, proj_Matrix);
-    cv::Point2f px_true = current_projector_corners[i];
+    //    cv::Point2f pr;// = applyPerspectiveTrafo(mean, proj_Matrix);
+    //    cv::Point2f px_true = current_projector_corners[i];
 
-
-    // ROS_INFO("Mean: %f %f %f px: %f %f", mean.x,mean.y,mean.z, pr.x,pr.y);
-
-    error += sqrt(pow(px_true.x-pr.x,2)+pow(px_true.y-pr.y,2));
+    // ROS_INFO("point %f %f %f projected: %f %f, corrected %f %f",mean.x,mean.y,mean.z,pr.x,pr.y,corrected.x,corrected.y);
 
     int r = 20;
-    cv::line(projector_image, cv::Point(pr.x,pr.y-r),cv::Point(pr.x,pr.y+r),CV_RGB(0,0,255),3);
-    cv::line(projector_image, cv::Point(pr.x-r,pr.y),cv::Point(pr.x+r,pr.y),CV_RGB(0,0,255),3);
+    drawMarker(projector_image,px_cv_with,CV_RGB(0,255,0),r);
+    drawMarker(projector_image,px_cv_without,CV_RGB(0,0,255),r);
+    drawMarker(projector_image,px_dlt_with,CV_RGB(255,0,0),r);
 
-    cv::circle(projector_image, pr, r, CV_RGB(255,0,0), 4);
-    cv::circle(projector_image, pr, 3, CV_RGB(255,0,0), -1);
+
+
+    //    // ROS_INFO("Mean: %f %f %f px: %f %f", mean.x,mean.y,mean.z, pr.x,pr.y);
+
+    //    error +=
+
+    //
+    //    //    cv::line(projector_image, cv::Point(pr.x,pr.y-r),cv::Point(pr.x,pr.y+r),CV_RGB(0,0,255),3);
+    //    //    cv::line(projector_image, cv::Point(pr.x-r,pr.y),cv::Point(pr.x+r,pr.y),CV_RGB(0,0,255),3);
+
+    //    //    cv::circle(projector_image, pr, r, CV_RGB(255,0,0), 4);
+    //        cv::circle(projector_image, px_cv_with, 3, CV_RGB(255,0,0), -1);
+    //cv::circle(projector_image, px_cv_with, 3, CV_RGB(255,0,0), -1);
+    //cv::circle(projector_image, px_cv_with, 3, CV_RGB(255,0,0), -1);
+    //    cv::circle(projector_image, corrected, 3, CV_RGB(0,255,0), -1);
+
+
+    //    cv::line(distortion_image,px_true,pr,CV_RGB(0,0,0),1);
+    //    //    cv::line(distortion_image,measured,px,CV_RGB(0,0,0),1);
+
+
+    //    //    cv::circle(distortion_image,measured,2,CV_RGB(255,0,0),-1);
+    //    cv::circle(distortion_image,px_true,2,CV_RGB(0,255,0),-1);
+    //    cv::circle(distortion_image,pr,2,CV_RGB(255,0,0),-1);
+
   }
 
-  error /= current_projector_corners.size();
 
+  //cv::imwrite("board_evaluation.png", distortion_image);
 
-  ss << "mean reprojection error: " << error;
-  ROS_INFO("Mean error: %.2f", error);
-  return error;
+  error_cv_with /= current_projector_corners.size();
+  error_cv_without /= current_projector_corners.size();
+  error_dlt_norm /= current_projector_corners.size();
+
+  ROS_INFO("errors: CV_with: %.3f, CV_without: %.3f, DLT: %.3f",error_cv_with,error_cv_without,error_dlt_norm);
+
+  //  ROS_INFO("Mean error: %.2f", error);
+  return -1;
 }
 
 
@@ -192,14 +230,31 @@ bool Projector_Calibrator::eval_projection_matrix_disc(Cloud& mean_c, std::strin
   cv::line(cpy, cv::Point(0,mom_center.y),cv::Point(cpy.rows, mom_center.y),CV_RGB(255,0,0),1);
 
 
-  // get mean of all points:
   pcl_Point mean = getInterpolatedPoint(mom_center);
+
+  projector_image.setTo(0);
+
+  cv::Point2f px;
+  if (cal_cv_with_dist.projectPoint(mean, px)){
+    cv::circle(projector_image, px, 2, CV_RGB(0,255,0), -1);
+  }
+
+  if (cal_cv_no_dist.projectPoint(mean, px)){
+    cv::circle(projector_image, px, 2, CV_RGB(0,0,255), -1);
+  }
+
+
+  if (cal_dlt_with_norm.projectPoint(mean, px)){
+    cv::circle(projector_image, px, 2, CV_RGB(255,0,0), -1);
+  }
+
+
 
   ss << "Marker Position: " << mean.x << " " << mean.y << " " << mean.z;
 
-  projector_image.setTo(0);
-  cv::Point2f px = applyPerspectiveTrafo(mean, proj_Matrix);
-  cv::circle(projector_image, px, 2, CV_RGB(0,255,0), -1);
+
+  //  cv::Point2f px;// = applyPerspectiveTrafo(mean, proj_Matrix);
+  //  cv::circle(projector_image, px, 2, CV_RGB(0,255,0), -1);
 
 
   mean_c.push_back(mean);
@@ -358,6 +413,8 @@ Projector_Calibrator::Projector_Calibrator(){
  */
 void Projector_Calibrator::initFromFile(std::stringstream& msg){
 
+
+
   mask = cv::imread("data/kinect_mask.png",0);
   if (mask.data){
     ROS_INFO("Found mask (%i %i)", mask.cols, mask.rows);
@@ -375,14 +432,29 @@ void Projector_Calibrator::initFromFile(std::stringstream& msg){
     msg << "Could not load transformation from kinect to world frame from " <<  fn;
 
 
-  msg << endl;
+  cal_dlt_no_norm.loadFromFile("cal_dlt_no_norm");
+  cal_dlt_with_norm.loadFromFile("cal_dlt_with_norm");
+  cal_cv_with_dist.loadFromFile("cal_cv_with_dist");
+  cal_cv_no_dist.loadFromFile("cal_cv_no_dist");
 
-  // load Matrices
-  if (loadMat("data/", proj_matrix_filename, proj_Matrix))
-    msg << "Projection matrix was loaded" << endl;
+  //  msg << endl;
 
-  if (loadMat("data/", hom_cv_filename, hom_CV))
-    msg << "Homography was loaded" << endl;
+  //  // load Matrices
+  //  if (loadMat("data/", proj_matrix_filename, proj_Matrix))
+  //    msg << "Projection matrix was loaded" << endl;
+
+  //  if (loadMat("data/", hom_cv_filename, hom_CV))
+  //    msg << "Homography was loaded" << endl;
+
+
+
+  //  ROS_INFO("Loading OpenCV-Calibration");
+  //  loadMat("data/", "proj_matrix_opencv", proj_Matrix);
+  //  loadMat("data/","camera_matrix_cv",camera_matrix_CV);
+  //  loadMat("data/","proj_trans",rvec_CV);
+  //  loadMat("data/","proj_rot",tvec_CV);
+  //  loadMat("data/","distortion",distCoeffs_CV);
+
 
   // loadMat("Homography (SVD)", hom_svd_filename, hom_SVD);
 }
@@ -404,6 +476,9 @@ bool Projector_Calibrator::loadKinectTrafo(std::stringstream& msg){
   if (kinect_trafo_valid){
     msg << "Loaded transformation from kinect to world frame";
     publishWorldFrame("/openni_rgb_camera_frame","/fixed_frame");
+
+    publishProjectorFrame("/fixed_frame","/projector");
+
   }else
     msg << "Could not load transformation from kinect to world frame from " <<  fn;
 
@@ -514,62 +589,62 @@ bool Projector_Calibrator::setupImageProjection(const cv_RectF& wall_area, const
 bool Projector_Calibrator::setupImageProjection(float width_m, float height_m, float off_x_m, float off_y_m, const cv::Size& img_size){
 
 
-  if(!projMatorHomSet()){
-    ROS_WARN("setupImageProjection: Neither Projection Matrix nor Homography computed!");
-    return false;
-  }
+  //  if(!projMatorHomSet()){
+  //    ROS_WARN("setupImageProjection: Neither Projection Matrix nor Homography computed!");
+  //    return false;
+  //  }
 
-  int width_px  = img_size.width;
-  int height_px = img_size.height;
+  //  int width_px  = img_size.width;
+  //  int height_px = img_size.height;
 
-  float height_m_2 = width_m/width_px*height_px;
+  //  float height_m_2 = width_m/width_px*height_px;
 
-  if (fabs(height_m_2-height_m) > 0.1){
-    ROS_WARN("setupImageProjection: Image and wall-section have different ratios!");
-  }
+  //  if (fabs(height_m_2-height_m) > 0.1){
+  //    ROS_WARN("setupImageProjection: Image and wall-section have different ratios!");
+  //  }
 
-  if (homOpenCVSet() || homSVDSet()){
+  //  if (homOpenCVSet() || homSVDSet()){
 
-    // Compute from Homography:
-    cv::Mat px_to_world(cv::Size(3,3), CV_64FC1);
-    px_to_world.setTo(0);
+  //    // Compute from Homography:
+  //    cv::Mat px_to_world(cv::Size(3,3), CV_64FC1);
+  //    px_to_world.setTo(0);
 
-    // ROS_INFO("Computing warp from Homography!");
+  //    // ROS_INFO("Computing warp from Homography!");
 
-    px_to_world.at<double>(2,2) = 1;
-    px_to_world.at<double>(0,0) = width_m/width_px;
-    px_to_world.at<double>(0,2) = off_x_m;
-    px_to_world.at<double>(1,1) = height_m/height_px; // == width/width_px
-    px_to_world.at<double>(1,2) = off_y_m;
+  //    px_to_world.at<double>(2,2) = 1;
+  //    px_to_world.at<double>(0,0) = width_m/width_px;
+  //    px_to_world.at<double>(0,2) = off_x_m;
+  //    px_to_world.at<double>(1,1) = height_m/height_px; // == width/width_px
+  //    px_to_world.at<double>(1,2) = off_y_m;
 
-    if (homOpenCVSet())
-      warp_matrix = hom_CV*px_to_world;
-    else
-      warp_matrix = hom_SVD*px_to_world;
+  //    if (homOpenCVSet())
+  //      warp_matrix = hom_CV*px_to_world;
+  //    else
+  //      warp_matrix = hom_SVD*px_to_world;
 
-    warp_matrix /= warp_matrix.at<double>(2,2); // defined up to scale
+  //    warp_matrix /= warp_matrix.at<double>(2,2); // defined up to scale
 
-    // cout << "Warp_matrix" << endl << warp_matrix << endl;
+  //    // cout << "Warp_matrix" << endl << warp_matrix << endl;
 
-    return true;
+  //    return true;
 
-  }
+  //  }
 
-  cv::Mat px_to_world(cv::Size(3,4), CV_64FC1);
-  px_to_world.setTo(0);
+  //  cv::Mat px_to_world(cv::Size(3,4), CV_64FC1);
+  //  px_to_world.setTo(0);
 
-  //  ROS_INFO("Computing warp from Projection Matrix!");
+  //  //  ROS_INFO("Computing warp from Projection Matrix!");
 
-  px_to_world.at<double>(3,2) = 1;
-  px_to_world.at<double>(0,0) = width_m/width_px;
-  px_to_world.at<double>(0,2) = off_x_m;
-  px_to_world.at<double>(1,1) = height_m/height_px; // == width/width_px
-  px_to_world.at<double>(1,2) = off_y_m;
+  //  px_to_world.at<double>(3,2) = 1;
+  //  px_to_world.at<double>(0,0) = width_m/width_px;
+  //  px_to_world.at<double>(0,2) = off_x_m;
+  //  px_to_world.at<double>(1,1) = height_m/height_px; // == width/width_px
+  //  px_to_world.at<double>(1,2) = off_y_m;
 
-  warp_matrix = proj_Matrix*px_to_world;
-  warp_matrix /= warp_matrix.at<double>(2,2); // defined up to scale
+  //  warp_matrix = proj_Matrix*px_to_world;
+  //  warp_matrix /= warp_matrix.at<double>(2,2); // defined up to scale
 
-  //  cout << "Warp_matrix: " << endl << warp_matrix << endl;
+  //  //  cout << "Warp_matrix: " << endl << warp_matrix << endl;
 
   return true;
 
@@ -817,6 +892,52 @@ bool Projector_Calibrator::computeHomography_SVD(){
 }
 
 
+
+cv::Point2f   undistort(float x, float y, float fx, float fy,float cx, float cy, cv::Mat dist_coeffs){
+
+
+
+  assert(dist_coeffs.cols == 4 || dist_coeffs.cols == 5);
+  assert(dist_coeffs.type() == CV_64FC1);
+
+  // cout << "coeffs" << endl << dist_coeffs <<endl;
+
+  float k1 = dist_coeffs.at<double>(0);
+  float k2 = dist_coeffs.at<double>(1);
+  float p1 = dist_coeffs.at<double>(2);
+  float p2 = dist_coeffs.at<double>(3);
+  float k3 = (dist_coeffs.cols == 5)?dist_coeffs.at<double>(4):0;
+
+
+  //  float r2 = x*x+y*y;
+
+  float xc = x-cx;
+  float yc = y-cy;
+
+
+  float r2 = xc*xc+yc*yc;
+
+  ROS_INFO("undistort %f %f  %f:",x,y,r2);
+
+  float x_ = xc*(1+k1*r2+k2*r2*r2+k3*r2*r2*r2)+2*p1*xc*yc+p2*(r2*+2*xc);
+  float y_ = yc*(1+k1*r2+k2*r2*r2+k3*r2*r2*r2)+2*p2*xc*yc+p1*(r2*+2*yc);
+
+
+  ROS_INFO("x_,y_: %f %f",x_,y_);
+
+  cv::Point2f res;
+  res.x = fx*x_+cx;
+  res.x = fy*y_+cy;
+
+  return res;
+
+
+}
+
+
+
+
+
 /**
  * @brief Compute Projection Matrix using OpenCV-functions
  * @param mean_error (output) mean reprojection error
@@ -832,6 +953,7 @@ bool Projector_Calibrator::computeHomography_SVD(){
  *
  */
 bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, bool with_distortion){
+
 
   ROS_WARN("COMPUTING Projection Matrix with openCV");
   assert(observations_3d.size() == corners_2d.size());
@@ -853,7 +975,6 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
     // return false;
   }
 
-
   vector<vector<cv::Point3f> > world_points;
   vector<vector<cv::Point2f> > pixels;
   vector<cv::Mat> rvecs, tvecs;
@@ -873,54 +994,126 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
   world_points.push_back(pt_3);
   pixels.push_back(corners_2d);
 
-  cv::Mat cameraMatrix = cv::Mat(3,3,CV_32FC1);
-  cv::Mat distCoeffs = cv::Mat(1,5,CV_32FC1);
-  distCoeffs.setTo(0);
 
 
-  cameraMatrix.setTo(0);
-  cameraMatrix.at<float>(0,2) = proj_size.width/2;
-  cameraMatrix.at<float>(1,2) = proj_size.height/2;
-  cameraMatrix.at<float>(0,0) = 3000;
-  cameraMatrix.at<float>(1,1) = 3000;
-  cameraMatrix.at<float>(2,2) = 1;
+  //  calibration.camera_matrix = cv::Mat(3,3,CV_32FC1);
+  //  calibration.proj_trafo = cv::Mat(3,4,CV_64FC1);
+  //  calibration.distCoeffs = cv::Mat(1,5,CV_32FC1);
+  //  calibration.distCoeffs.setTo(0);
+
+
+  Calibration cal;
+
+  cal.camera_matrix.setTo(0);
+  cal.camera_matrix.at<float>(0,2) = proj_size.width/2;
+  cal.camera_matrix.at<float>(1,2) = proj_size.height/2;
+  cal.camera_matrix.at<float>(0,0) = 3000;
+  cal.camera_matrix.at<float>(1,1) = 3000;
+  cal.camera_matrix.at<float>(2,2) = 1;
+
+  cout << "init intrinicsss" << cal.camera_matrix << endl;
 
   int flag;
 
   if (with_distortion)
-    flag = CV_CALIB_USE_INTRINSIC_GUESS;
+    flag = CV_CALIB_USE_INTRINSIC_GUESS; //  | CV_CALIB_FIX_ASPECT_RATIO;
   else
     flag = CV_CALIB_USE_INTRINSIC_GUESS | CV_CALIB_ZERO_TANGENT_DIST | CV_CALIB_FIX_K1 | CV_CALIB_FIX_K2 | CV_CALIB_FIX_K3;
 
-  cv::calibrateCamera(world_points, pixels, proj_size, cameraMatrix, distCoeffs, rvecs, tvecs, flag);
 
-  //    cout << "camera: " << cameraMatrix << endl;
-  //    cout << "distortion: " << distCoeffs << endl;
+  ROS_INFO("proj: %i %i",proj_size.width,proj_size.height);
+  cout << "init intrinic" << cal.camera_matrix << endl;
+
+  cv::calibrateCamera(world_points, pixels, proj_size, cal.camera_matrix, cal.distCoeffs, rvecs, tvecs, flag);
+
+  cout << "camera: " << cal.camera_matrix << endl;
+  cout << "distortion: " << cal.distCoeffs << endl;
 
   // build projection matrix:
-  cv::Rodrigues(rvecs[0], rotMatrix_CV);
-  cv::hconcat(rotMatrix_CV, tvecs[0], proj_matric_cv);
+  cout << "position: " << tvecs[0] << endl;
 
-  proj_matric_cv = cameraMatrix * proj_matric_cv;
-  proj_matric_cv /= proj_matric_cv.at<double>(2,3);
+  assert(cal.camera_matrix.type() == CV_64FC1);
+
+  cv::Rodrigues(rvecs[0], cal.rotMatrix);
+
+  cv::hconcat(cal.rotMatrix, tvecs[0], cal.proj_trafo);
+
+  cal.proj_matrix =  cal.camera_matrix*cal.proj_trafo;
+  cal.proj_matrix /= cal.proj_matrix.at<double>(2,3);
 
   //    cout << "P: " << endl << proj_matric_cv << endl;
 
   int N = observations_3d.size();
 
   vector<cv::Point2f> reprojected;
-  cv::projectPoints(pt_3,rvecs[0],tvecs[0],cameraMatrix,distCoeffs,reprojected);
+
+  cal.rvec = rvecs[0];
+  cal.tvec = tvecs[0];
+
+  cv::projectPoints(pt_3,cal.rvec,cal.tvec,cal.camera_matrix,cal.distCoeffs,reprojected);
+
 
   mean_error = 0;
   float total_x = 0;
   float total_y = 0;
 
+
+  cv::Mat distortion_image(projector_image.size(),CV_8UC3);
+  distortion_image.setTo(255);
+
+
+  assert(cal.camera_matrix.type() == CV_64FC1);
+
+  cout << cal.camera_matrix <<endl;
+
+  //  float f_x = camera_matrix_CV.at<double>(0,0);
+  //  float f_y = camera_matrix_CV.at<double>(1,1);
+  //  float c_x = camera_matrix_CV.at<double>(0,2);
+  //  float c_y = camera_matrix_CV.at<double>(1,2);
+
+  //  ROS_INFO("cam: f,x: %f %f %f %f",f_x,f_y,c_x,c_y);
+
+
+  //  cv::Mat ts = cv::Mat::zeros(0,3,CV_32FC1);
+  //  cv::Mat rs = cv::Mat::zeros(0,3,CV_32FC1);
+  //  cv::Mat f = cv::Mat::ones(0,3,CV_32FC1);
+
+  //  vector<cv::Point2f> redistorted;
+  //  cv::projectPoints(reprojected,rs,ts,f,distCoeffs_CV,redistorted);
+
+
+
+
   for (int i=0; i<N; ++i){
     cv::Point2f projected = reprojected[i];
     cv::Point2f measured = corners_2d.at(i);
 
-    //  cv::Point2f   px = applyPerspectiveTrafo(observations_3d.points.at(i),P);
-    //    ROS_INFO("proj: %.1f %.1f (selbst: %.1f %.1f) meas: %.1f %.1f", projected.x,projected.y, px.x,px.y,measured.x,measured.y);
+
+
+
+
+    cv::Point2f  px = applyPerspectiveTrafo(observations_3d.points.at(i),cal.proj_matrix);
+
+    cv::Point2f undis = undistort(px.x,px.y,cal.f_x(),cal.f_y(),cal.c_x(),cal.c_y(),cal.distCoeffs);
+
+
+
+
+
+    ROS_INFO("Opencv: %f %f, self: %f %f",projected.x,projected.y,undis.x,undis.y);
+
+    // ROS_INFO("proj: %.1f %.1f (selbst: %.1f %.1f) meas: %.1f %.1f", projected.x,projected.y, px.x,px.y,measured.x,measured.y);
+
+
+    if (with_distortion){
+      cv::line(distortion_image,measured,projected,CV_RGB(0,0,0),1);
+      cv::line(distortion_image,measured,px,CV_RGB(0,0,0),1);
+
+
+      cv::circle(distortion_image,measured,2,CV_RGB(255,0,0),-1);
+      cv::circle(distortion_image,projected,2,CV_RGB(0,255,0),-1);
+      cv::circle(distortion_image,px,2,CV_RGB(0,0,255),-1);
+    }
 
     total_x += abs(projected.x-measured.x)/N;
     total_y += abs(projected.y-measured.y)/N;
@@ -929,21 +1122,38 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
   }
 
 
+  if (with_distortion){
+    //cv::resize(distortion_image,distortion_image,cv::Size(),0.5,0.5);
+    cv::imwrite("projection_error.png",distortion_image);
+  }
+
   //    cout << "sandbox position " << tvecs[0] << endl;
 
-  cv::Mat cam,trans, rot;
-  cv::decomposeProjectionMatrix(proj_matric_cv, cam,rot, trans);
+  //  cv::Mat cam,trans, rot;
+  //  cv::decomposeProjectionMatrix(proj_matrix_cv, cam,rot, trans);
+  //  trans /= trans.at<double>(3);
+
+  //  cout << "OPENCV" << endl;
+  //  cout << "cam " << endl << camera_matrix_CV << endl << cam << endl;
+  //  cout << "rot " << endl << rotMatrix_CV << endl << rot << endl;
+  //  cout << "trans " << endl << tvecs[0] << endl << trans << endl;
 
 
   // invert transformation so that the pose of the projector is given
-  rotMatrix_CV = rotMatrix_CV.inv();
-  projector_position_CV = -rotMatrix_CV*tvecs[0];
+  //  rotMatrix_CV = rotMatrix_CV.inv();
+  //  projector_position_CV = -rotMatrix_CV.inv()*tvecs[0];
 
   //    cout << "ProjectorPosition: " << projector_position_CV << endl;
   //    cout << "ProjectorRotation: " << rotMatrix_CV << endl;
 
   ROS_INFO("Projection Matrix: mean error: %f (x: %f, y: %f)", mean_error, total_x, total_y);
-  // saveMat("data/", "proj_matrix_opencv", proj_Matrix)
+
+  if (with_distortion)
+    cal_cv_with_dist = cal;
+  else
+    cal_cv_no_dist = cal;
+
+
   return true;
 }
 
@@ -1031,19 +1241,22 @@ bool Projector_Calibrator::computeProjectionMatrix(float& mean_error, bool do_sc
   cv::Mat h = cv::Mat(12,1,CV_64FC1);
   cv::SVD::solveZ(A,h);
 
-  proj_Matrix = cv::Mat(3,4,CV_64FC1);
+
+
+  Calibration &cal = do_scaling?cal_dlt_with_norm:cal_dlt_no_norm;
+  cal.proj_matrix = cv::Mat::zeros(3,4,CV_64FC1);
 
   for (uint i=0; i<3; ++i){
     for (uint j=0; j<4; ++j)
-      proj_Matrix.at<double>(i,j) =  h.at<double>(4*i+j);
+      cal.proj_matrix.at<double>(i,j) =  h.at<double>(4*i+j);
   }
 
   // cout << "Tinv " << T.inv() << endl;
   // cout << "U " << U << endl;
 
 
-  proj_Matrix = T.inv()*proj_Matrix*U;  // undo scaling
-  proj_Matrix /= proj_Matrix.at<double>(2,3); // defined up to scale
+  cal.proj_matrix = T.inv()*cal.proj_matrix*U;  // undo scaling
+  cal.proj_matrix /= cal.proj_matrix.at<double>(2,3); // defined up to scale
 
   mean_error = 0;
   double total_x = 0;
@@ -1058,7 +1271,7 @@ bool Projector_Calibrator::computeProjectionMatrix(float& mean_error, bool do_sc
     pcl_Point   p = observations_3d.points.at(i);
     cv::Point2f p_ = corners_2d.at(i);
 
-    applyPerspectiveTrafo(cv::Point3f(p.x,p.y,p.z),proj_Matrix,px);
+    applyPerspectiveTrafo(cv::Point3f(p.x,p.y,p.z),cal.proj_matrix,px);
 
     // ROS_INFO("err: %f %f", (px.x-p_.x),(px.y-p_.y));
 
@@ -1087,29 +1300,22 @@ bool Projector_Calibrator::computeProjectionMatrix(float& mean_error, bool do_sc
 
   ROS_INFO("Projection Matrix: mean error: %f (x: %f, y: %f)", mean_error, total_x, total_y);
   // saveMat("Projection Matrix", proj_matrix_filename, proj_Matrix);
-
-  saveMat("data/", proj_matrix_filename, proj_Matrix);
-
+  // saveMat("data/", proj_matrix_filename, proj_Matrix);
 
 
 
-  cv::decomposeProjectionMatrix(proj_Matrix, camera_matrix,rotMatrix, projector_position);
 
-  projector_position /= projector_position.at<double>(3);
-  projector_position = projector_position.rowRange(0,3);
-  camera_matrix /= camera_matrix.at<double>(2,2);
+  cv::decomposeProjectionMatrix(cal.proj_matrix, cal.camera_matrix,cal.rotMatrix, cal.projector_position);
+
+  cal.projector_position /= cal.projector_position.at<double>(3);
+  cal.projector_position = cal.projector_position.rowRange(0,3);
+  cal.camera_matrix /= cal.camera_matrix.at<double>(2,2);
 
   // compute camera pose in sandbox frame
-
-  cout << "rotMatrix  " << rotMatrix << endl;
-  cout << "trans  " << projector_position << endl;
+  cal.print();
 
 
-  cout << "Projection Matrix" << endl << proj_Matrix << endl;
 
-  cout << "camera_matrix" << endl << camera_matrix << endl;
-  cout << "Proj Position: " << endl << projector_position << endl;
-  cout << "Projector Rot: " << endl << rotMatrix << endl;
 
   /*
  cv::Mat P_(proj_Matrix.colRange(0,3));
@@ -1228,20 +1434,46 @@ bool Projector_Calibrator::saveHomographyCV(std::stringstream& msg){
  * @param msg
  * @return true if file was written
  */
-bool Projector_Calibrator::saveProjectionMatrix(std::stringstream& msg){
-  if (proj_Matrix.cols == 0){
-    msg << "Projection matrix is not yet computed!";
-    return false;
-  }
+bool Projector_Calibrator::saveCalibrations(std::stringstream& msg){
 
 
-  if (saveMat("data/", proj_matrix_filename, proj_Matrix)){
-    msg << "Projection Matrix was written to " << proj_matrix_filename;
-    return true;
-  }else{
-    msg << "Problems writing Projection Matrix to " << proj_matrix_filename;
-    return false;
-  }
+  cal_dlt_no_norm.writeToFile("cal_dlt_no_norm");
+  cal_dlt_with_norm.writeToFile("cal_dlt_with_norm");
+  cal_cv_with_dist.writeToFile("cal_cv_with_dist");
+  cal_cv_no_dist.writeToFile("cal_cv_no_dist");
+
+
+  return true;
+
+  //  if (proj_Matrix.cols == 0){
+  //    msg << "Projection matrix is not yet computed!";
+  //    return false;
+  //  }
+
+
+  //  if (saveMat("data/", proj_matrix_filename, proj_Matrix)){
+  //    msg << "Projection Matrix was written to " << proj_matrix_filename;
+  //    return true;
+  //  }else{
+  //    msg << "Problems writing Projection Matrix to " << proj_matrix_filename;
+  //    return false;
+  //  }
+
+
+  //  ROS_INFO("Storing OpenCV calibration");
+
+
+
+
+
+  //  saveMat("data/", "proj_matrix_opencv", proj_Matrix);
+  //  saveMat("data/","camera_matrix_cv",camera_matrix_CV);
+  //  saveMat("data/","proj_trans",rvec_CV);
+  //  saveMat("data/","proj_rot",tvec_CV);
+  //  saveMat("data/","distortion",distCoeffs_CV);
+
+
+
 }
 
 
@@ -1413,7 +1645,7 @@ bool Projector_Calibrator::removeLastObservations(){
 
   ROS_INFO("removing %i pairs, total # of pairs: %zu", obs_in_last,observations_3d.size());
 
-  uint old_size = observations_3d.size();
+  //uint old_size = observations_3d.size();
 
   // end() points 1 after the last, s.t. obs.end()-1 is last valid iterator
 
@@ -1425,7 +1657,7 @@ bool Projector_Calibrator::removeLastObservations(){
   // remove last entry in list
   number_of_features_in_images.erase(number_of_features_in_images.begin()+number_of_features_in_images.size()-1);
 
-  assert(observations_3d.size() + obs_in_last == old_size);
+  // assert(observations_3d.size() + obs_in_last == old_size);
   assert(observations_3d.size() == corners_2d.size());
 
   if (observations_3d.size() == 0)
@@ -1488,7 +1720,7 @@ Cloud Projector_Calibrator::visualizePointCloud(){
         continue;
 
       cv::Point2f px;
-      applyPerspectiveTrafo(cv::Point3f(p.x,p.y,p.z),proj_Matrix,px);
+      applyPerspectiveTrafo(cv::Point3f(p.x,p.y,p.z),cal_cv_no_dist.proj_matrix,px);
 
       int x = px.x; int y = px.y;
 
@@ -1577,13 +1809,19 @@ bool  Projector_Calibrator::computeKinectTransformation(std::stringstream& msg){
   int w = checkboard_size.width;
   int h = checkboard_size.height;
 
+  ROS_INFO("Checkerboard size: w,h: %i %i",w,h);
+
+
   int m = (h/2*w)+(w-1)/2; // center of pattern
   int right = (h/2*w)+(w-1); // rightmost corner with same height as center point
-
 
   pcl_Point p  = input_cloud.at(detected_corners[m].x, detected_corners[m].y);
   pcl_Point p2 = input_cloud.at(detected_corners[right].x, detected_corners[right].y);
   //  pcl_Point p2 = input_cloud.at(detected_corners[m].x+sin(-kinect_tilt_angle_deg/180*M_PI)*100, detected_corners[m].y-cos(-kinect_tilt_angle_deg/180*M_PI)*100);
+
+  kinect_frame_points.clear();
+  kinect_frame_points.push_back(p);
+  kinect_frame_points.push_back(p2);
 
   if ( p2.x != p2.x){
     msg << "NAN in pointcloud, no calculation of new world-frame" << endl;
@@ -1594,14 +1832,34 @@ bool  Projector_Calibrator::computeKinectTransformation(std::stringstream& msg){
   Eigen::Vector3f pl_center = Eigen::Vector3f(p.x,p.y,p.z);
   Eigen::Vector3f pl_right = Eigen::Vector3f(p2.x-p.x,p2.y-p.y,p2.z-p.z);
 
+
   float plane_direction = plane_model.head<3>()[2]>0?1:-1;   // z-axis upwards
 
-  computeTransformationFromYZVectorsAndOrigin(pl_right,-plane_direction*plane_model.head<3>(), pl_center,kinect_trafo);
+  pcl::getTransformationFromTwoUnitVectorsAndOrigin(pl_right,-plane_direction*plane_model.head<3>(), pl_center,kinect_trafo);
 
   pcl::getTransformedPointCloud(input_cloud,kinect_trafo,cloud_moved);
   kinect_trafo_valid = true;
 
   return true;
+}
+
+
+
+bool Projector_Calibrator::publishProjectorFrame(const std::string& kinect_frame, const std::string& projector_frame){
+
+  if (cal_cv_no_dist.proj_trafo.cols != 4){
+    // ROS_INFO("publishProjectorFrame trafo size: %i %i",proj_trafo_CV.rows,proj_trafo_CV.cols);
+    return false;
+  }
+
+  Eigen::Affine3f eigen;
+  mat2Eigen(cal_cv_no_dist.proj_trafo,eigen);
+
+  Eigen::Affine3f inv = pcl::getInverse(eigen*kinect_trafo);
+  sendTrafo(kinect_frame, projector_frame,inv);
+
+  return true;
+
 }
 
 
@@ -1620,24 +1878,6 @@ bool Projector_Calibrator::publishWorldFrame(const std::string& kinect_frame, co
 
   Eigen::Affine3f inv = pcl::getInverse(kinect_trafo);
   sendTrafo(kinect_frame,world_frame, inv);
-
-  //
-
-  //  static tf::TransformBroadcaster br;
-  //  tf::Transform transform;
-
-  //  transform.setOrigin( tf::Vector3(inv.translation()(0),inv.translation()(1),inv.translation()(2) )  );
-  //  Eigen::Quaternionf quat(inv.rotation());
-
-  //  tf::Quaternion tf_quat;
-
-  //  tf_quat.setX(quat.x());
-  //  tf_quat.setY(quat.y());
-  //  tf_quat.setZ(quat.z());
-  //  tf_quat.setW(quat.w());
-
-  //  transform.setRotation( tf_quat );
-  //  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), kinect_frame, world_frame));
 
   return true;
 }
@@ -1799,7 +2039,7 @@ bool Projector_Calibrator::findOptimalProjectionArea2(cv::Mat::MSize img_px_size
 
   float step = 0.02; // check every X m
 
-  float width, height; int x, y;
+  float width, height; int x = 0; int y = 0;
   for (width = max_x; width > 0 && !finished; width -= step){
     height = width/ratio;
 
@@ -1940,7 +2180,8 @@ bool Projector_Calibrator::findOptimalProjectionArea(float ratio, cv_RectF& rect
 
   float step = 0.02; // check every X m
 
-  float width, height; int x, y;
+  float width, height;
+  int x = 0; int y = 0;
   for (width = max_x; width > 0 && !finished; width -= step){ // check every 5 cm
     height = width/ratio;
 
@@ -1999,7 +2240,9 @@ void Projector_Calibrator::setInputCloud(const Cloud& cloud){
     return;
   }
 
+  timing_start("copy");
   input_cloud = cloud;
+  //timing_end("copy");
 
 #ifdef COMPUTE_NANS
   // count invalid points:
@@ -2014,9 +2257,11 @@ void Projector_Calibrator::setInputCloud(const Cloud& cloud){
 #endif
 
   if (kinect_trafo_valid){
-    //ros::Time foo = ros::Time::now();
+    //  ros::Time foo = ros::Time::now();
+    //  timing_start("trafo");
     pcl::getTransformedPointCloud(input_cloud,kinect_trafo,cloud_moved);
-    //ROS_INFO("transforming: %f ms", (ros::Time::now()-foo).toSec()*1000);
+    //  timing_end("trafo");
+    //  ROS_INFO("transforming: %f ms", (ros::Time::now()-foo).toSec()*1000);
 
 #ifdef COMPUTE_NANS
     for (uint i=0; i<cloud_moved.size(); ++i) {
@@ -2242,9 +2487,15 @@ void Projector_Calibrator::createProjektorMarker(visualization_msgs::Marker& mar
 
   geometry_msgs::Point p;
 
-  p.x = projector_position.at<double>(0);
-  p.y = projector_position.at<double>(1);
-  p.z = projector_position.at<double>(2);
+
+  if (cal_cv_no_dist.projector_position.cols < 4){
+    ROS_INFO("can't send marker if cal_cv_no_dist is not defined");
+    return;
+  }
+
+  p.x = cal_cv_no_dist.projector_position.at<double>(0);
+  p.y = cal_cv_no_dist.projector_position.at<double>(1);
+  p.z = cal_cv_no_dist.projector_position.at<double>(2);
 
   marker.points.push_back(p);
 
@@ -2252,7 +2503,7 @@ void Projector_Calibrator::createProjektorMarker(visualization_msgs::Marker& mar
   dir.setTo(0);
   dir.at<double>(2) = 1;
 
-  cv::Mat head = rotMatrix*dir;
+  cv::Mat head = cal_cv_no_dist.rotMatrix*dir;
 
   p.x += head.at<double>(0);
   p.y += head.at<double>(1);
@@ -2289,11 +2540,9 @@ void Projector_Calibrator::createProjektorMarker_CV(visualization_msgs::Marker& 
 
   geometry_msgs::Point p;
 
-  cout << "Opencv" << endl << rotMatrix_CV << endl << " pos: " << endl << projector_position_CV << endl;
-
 
   cv::Mat cam,trans, rot;
-  cv::decomposeProjectionMatrix(proj_matric_cv, cam,rot, trans);
+  cv::decomposeProjectionMatrix(cal_cv_no_dist.proj_matrix, cam,rot, trans);
   trans /= trans.at<double>(3);
   cout << "opencv rot: " << endl << rot << "trans " << trans << endl;
 
@@ -2324,3 +2573,112 @@ void Projector_Calibrator::createProjektorMarker_CV(visualization_msgs::Marker& 
 }
 
 
+
+bool Calibration::writeToFile(const std::string& filename)
+{
+
+  char fn[100]; sprintf(fn,"data/%s.yml", filename.c_str());
+  ROS_INFO("Saving calibration to %s", fn);
+
+  cv::FileStorage fs(fn, cv::FileStorage::WRITE);
+  if (!fs.isOpened()){
+    ROS_WARN("Could not write to %s", fn);
+    return false;
+  }
+
+  fs << "projector_position" << projector_position;
+  fs << "proj_matrix" << proj_matrix;
+  fs << "rotMatrix" << rotMatrix;
+  fs << "camera_matrix" << camera_matrix;
+  fs << "distCoeffs" << distCoeffs;
+  fs << "proj_trafo" << proj_trafo;
+  fs << "rvec" << rvec;
+  fs << "tvec" << tvec;
+
+  return true;
+}
+
+
+bool Calibration::loadFromFile(const std::string& filename)
+{
+
+  char fn[100]; sprintf(fn,"data/%s.yml", filename.c_str());
+  ROS_INFO("Reading Calibation from %s",fn);
+
+  cv::FileStorage fs(fn, cv::FileStorage::READ);
+  if (!fs.isOpened()){
+    ROS_WARN("Could not read calibration %s", fn);
+    return false;
+  }
+
+  fs["proj_matrix"] >> proj_matrix;
+  fs["rotMatrix"] >> rotMatrix;
+  fs["camera_matrix"] >> camera_matrix;
+  fs["distCoeffs"] >> distCoeffs;
+  fs["proj_trafo"] >> proj_trafo;
+  fs["rvec"] >> rvec;
+  fs["tvec"] >> tvec;
+  fs["projector_position"] >> projector_position;
+
+
+  fs.release();
+  return true;
+
+}
+
+void Calibration::print(){
+  cout << "rotMatrix  " << rotMatrix << endl;
+  cout << "trans  " << projector_position << endl;
+  cout << "Projection Matrix" << endl << proj_matrix << endl;
+  cout << "camera_matrix" << endl << camera_matrix << endl;
+  cout << "Proj Position: " << endl << projector_position << endl;
+  cout << "Projector Rot: " << endl << rotMatrix << endl;
+}
+
+
+bool Calibration::projectPoints(std::vector<cv::Point3f> d3, std::vector<cv::Point2f>& px){
+  px.clear();
+  if (proj_matrix.cols != 4 || proj_matrix.rows != 3){
+    return false;
+  }
+  checkCamMatrix();
+  if (cv::sum(distCoeffs).val[0] < 1e-3){
+    for (uint i=0; i<d3.size(); ++i){
+      px.push_back(applyPerspectiveTrafo(d3[i],proj_matrix));
+    }
+  }else{
+    cv::projectPoints(d3,rvec,tvec,camera_matrix,distCoeffs,px);
+  }
+  return true;
+}
+
+bool Calibration::projectPoint(pcl_Point d3, cv::Point2f& px){
+  cv::Point3f d;
+  d.x =d3.x; d.y =d3.y; d.z =d3.z;
+  return projectPoint(d,px);
+}
+
+
+bool Calibration::projectPoint(cv::Point3f d3, cv::Point2f& px){
+
+  if (proj_matrix.cols != 4 || proj_matrix.rows != 3){
+    return false;
+  }
+
+  checkCamMatrix();
+
+  if (cv::sum(distCoeffs).val[0] < 1e-3){
+    px = applyPerspectiveTrafo(d3,proj_matrix);
+  }else{
+    vector<cv::Point3f> foo;
+    foo.push_back(d3);
+
+    vector<cv::Point2f> bar;
+    cv::projectPoints(foo,rvec,tvec,camera_matrix,distCoeffs,bar);
+
+    px = bar[0];
+
+  }
+
+  return true;
+}

@@ -22,6 +22,8 @@
 #include "fstream"
 #include <image_geometry/pinhole_camera_model.h>
 #include "rgbd_utils/stat_eval.h"
+#include "rgbd_utils/calibration_utils.h"
+
 
 typedef cv::Rect_<float> cv_RectF;
 
@@ -29,6 +31,70 @@ typedef cv::Rect_<float> cv_RectF;
 
 enum INTERPOLATION_TYPE {INTER_NON, INTER_SIMPLE,INTER_BI};
 
+
+
+
+struct Calibration {
+
+  cv::Mat proj_matrix; /// projection matrix
+
+  cv::Mat rotMatrix; /// rotation projector in the world system as computed by openCV
+  cv::Mat camera_matrix; /// internal camera parameters of projector as computed by openCV
+  cv::Mat distCoeffs; /// distortion coefficients for projector
+  cv::Mat proj_trafo; /// transformation from sandbox to projector' frame
+  cv::Mat rvec, tvec; /// translation and rotation vector
+  cv::Mat projector_position;
+
+  Calibration(){
+    camera_matrix = cv::Mat(3,3,CV_32FC1);
+    proj_trafo = cv::Mat(3,4,CV_64FC1);
+    distCoeffs = cv::Mat(1,5,CV_32FC1); distCoeffs.setTo(0);
+    rvec = cv::Mat(3,1,CV_64FC1); rvec.setTo(0);
+    tvec = cv::Mat(3,1,CV_64FC1); tvec.setTo(0);
+    projector_position = cv::Mat(3,1,CV_64FC1); projector_position.setTo(0);
+  }
+
+  float f_x(){
+    checkCamMatrix();
+    return camera_matrix.at<double>(0,0);
+  }
+
+  float f_y(){
+    checkCamMatrix();
+    return camera_matrix.at<double>(1,1);
+  }
+
+  float c_x(){
+    checkCamMatrix();
+    return camera_matrix.at<double>(0,2);
+  }
+
+  float c_y(){
+    checkCamMatrix();
+    return camera_matrix.at<double>(1,2);
+  }
+
+
+  bool projectPoint(cv::Point3f d3, cv::Point2f& px);
+   bool projectPoint(pcl_Point d3, cv::Point2f& px);
+  bool projectPoints(std::vector<cv::Point3f> d3, std::vector<cv::Point2f>& px);
+
+
+  void print();
+
+  bool writeToFile(const std::string& filename);
+  bool loadFromFile(const std::string& filename);
+
+
+private:
+  void checkCamMatrix(){
+    assert(camera_matrix.cols == 3);
+    assert(camera_matrix.rows == 3);
+    assert(camera_matrix.type() == CV_64FC1);
+  }
+
+
+};
 
 
 
@@ -78,6 +144,11 @@ class Projector_Calibrator {
 
 public:
 
+
+  cv::Mat proj_Matrix(){
+    return cal_cv_no_dist.proj_matrix;
+  }
+
   Eigen::Affine3f kinect_trafo;
 
   bool depth_cam_model_set;
@@ -101,10 +172,10 @@ public:
   Cloud cloud_moved;
 
   /// Projection matrix of projector computed with DLT-Approach
-  cv::Mat proj_Matrix;
+  // cv::Mat proj_Matrix;
 
   /// Projection matrix of projector computed with cv::calibrateCamera
-  cv::Mat proj_matric_cv;
+//  cv::Mat proj_matrix_cv;
 
 
 
@@ -132,14 +203,25 @@ public:
   int eval_brightness_threshold;
 
 
-  cv::Mat projector_position; /// position of projector in the world system
-  cv::Mat rotMatrix; /// rotation projector in the world system
-  cv::Mat camera_matrix; /// internal camera parameters of projector
+  Calibration cal_dlt_no_norm;
+  Calibration cal_dlt_with_norm;
 
-  cv::Mat rotMatrix_CV; /// rotation projector in the world system
-  cv::Mat projector_position_CV; /// position of projector in the world system
+  Calibration cal_cv_with_dist;
+  Calibration cal_cv_no_dist;
 
 
+//  cv::Mat projector_position; /// position of projector in the world system
+//  cv::Mat rotMatrix; /// rotation projector in the world system
+//  cv::Mat camera_matrix; /// internal camera parameters of projector
+
+//  cv::Mat rotMatrix_CV; /// rotation projector in the world system as computed by openCV
+//  cv::Mat camera_matrix_CV; /// internal camera parameters of projector as computed by openCV
+//  cv::Mat projector_position_CV; /// position of projector in the world system
+//  cv::Mat distCoeffs_CV; /// distortion coefficients for projector
+//  cv::Mat proj_trafo_CV; /// transformation from sandbox to projector' frame
+//  cv::Mat rvec_CV, tvec_CV; /// translation and rotation vector
+
+  Cloud kinect_frame_points;
 
 
   float eval_projection_matrix_Checkerboard(Cloud& corners, std::stringstream& ss);
@@ -178,7 +260,7 @@ public:
 
   bool loadKinectTrafo(std::stringstream& msg);
   bool saveHomographyCV(std::stringstream& msg);
-  bool saveProjectionMatrix(std::stringstream& msg);
+  bool saveCalibrations(std::stringstream& msg);
 
 
   /// remove all point from the input cloud where mask!=255
@@ -227,7 +309,7 @@ public:
   void initFromFile(std::stringstream& msg);
 
   /// true if projection matrix was set
-  bool projMatrixSet(){ return proj_Matrix.cols > 0;}
+  bool projMatrixSet(){ return cal_cv_no_dist.proj_matrix.cols > 0;}
   /// true if Homography (using OpenCV) was computed
   bool homOpenCVSet(){ return hom_CV.cols > 0;}
 
@@ -292,14 +374,18 @@ public:
   void setInputCloud(const Cloud& cloud);
 
   bool publishWorldFrame(const std::string& kinect_frame,const std::string& world_frame);
+  bool publishProjectorFrame(const std::string& kinect_frame,const std::string& world_frame);
+
+
+
 
   void showUnWarpedImage(const cv::Mat& img);
 
 
-//  void showUnWarpedImage(){
-//    assert(test_img.data);
-//    showUnWarpedImage(test_img);
-//  }
+  //  void showUnWarpedImage(){
+  //    assert(test_img.data);
+  //    showUnWarpedImage(test_img);
+  //  }
 
 
   cv::Mat* getTestImg(){return &test_img;}

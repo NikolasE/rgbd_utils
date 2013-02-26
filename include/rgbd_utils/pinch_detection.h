@@ -420,7 +420,7 @@ void drawObjectContours(Object_tracker<Playing_Piece,Track<Playing_Piece> >& pie
 class Detector  {
 
 
-  static const float small_area_threshold = 100;
+  static const float small_area_threshold = 500;
 
   // static const float fingertip_min_dist = 0.02;
   static const float fingertip_max_dist = 0.05;
@@ -495,7 +495,7 @@ public:
 
   void setDetectionArea(const cv::Mat& mask);
 
-  bool handVisibleInLastFrame(){return handVisible;}
+  bool handVisibleInCurrentFrame(){return handVisible;}
   bool detectionAreaSet(){return detection_area_set;}
 
 };

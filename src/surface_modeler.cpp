@@ -352,6 +352,8 @@ void Elevation_map::reset(){
 */
 bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
 
+  timing_start("update_height");
+
   bool min_diff_active = min_diff_m > 0;
 
   update_count++;
@@ -458,11 +460,14 @@ bool Elevation_map::updateHeight(const Cloud& cloud, float min_diff_m){
   cv::GaussianBlur(mean, mean, cv::Size(blur_size,blur_size),2,2);
   
   if (locking_active){
-    cv::Mat locked_dilated
+    cv::Mat locked_dilated;
     cv::dilate(locked, locked_dilated, cv::Mat(), cv::Point(-1,-1), blur_size);
     mean_old.copyTo(mean,locked_dilated); // reset mean at locked cells
   }
   
+
+  timing_end("update_height");
+
   // due to measurement errors, some pixels have a high error. If a hand is visible in the image,
   // more than 500 Pixels are counted.
   return dyn_pixel_cnt > 10;
@@ -638,12 +643,14 @@ Cloud  Elevation_map::getModel(){
 */
 void Elevation_map::init(float cell_size, float x_min, float x_max, float y_min, float y_max){
 
+
+
   x_min_ = x_min; x_max_ = x_max; y_min_ = y_min; y_max_ = y_max;
   cell_size_ = cell_size;
   cell_cnt_x = ceil((x_max-x_min)/cell_size);
   cell_cnt_y = ceil((y_max-y_min)/cell_size);
 
-  ROS_INFO("Creating grid with %i x %i cells", cell_cnt_x, cell_cnt_y);
+  ROS_INFO("Creating grid with %i x %i cells (cell size: %f)", cell_cnt_x, cell_cnt_y,cell_size);
 
   mean = cv::Mat(cell_cnt_y, cell_cnt_x, CV_32FC1);
   mean.setTo(0);

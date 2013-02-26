@@ -57,6 +57,9 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_
 
  // ROS_INFO("Creating mesh for %i %i grid", cloud.width, cloud.height);
 
+
+ timing_start("mesh creation");
+
  int width = cloud.width;
 
  sensor_msgs::PointCloud2 msg;
@@ -101,6 +104,8 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_
 
  if (do_checks)
   mesh.polygons.resize(mesh.polygons.size());
+
+ timing_end("mesh creation");
 
  return mesh;
 }

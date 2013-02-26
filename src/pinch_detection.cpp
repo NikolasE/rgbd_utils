@@ -438,6 +438,7 @@ void Detector::getFingerTips(cv::Mat* rgb){
 
 void Detector::getObjects(cv::Mat* rgb_result){
 
+
   for( int current = 0; current<int(contours.size()); current++){
     float area = areas[current];
 
@@ -522,6 +523,9 @@ void Detector::getGrasps(cv::Mat* rgb_result){
       continue;
     }
 
+    ROS_INFO("max Grasp area: %f (min %f)",largest_hole_area,small_area_threshold);
+
+
     is_grasp.push_back(true);
 
     Grasp grasp;
@@ -584,16 +588,14 @@ void Detector::analyseScene(cv::Mat* rgb_result){
   grasp_detections.clear();
   object_detections.clear();
 
-
-
-
-
   if (handVisible){
     getGrasps(rgb_result);
     getFingerTips(rgb_result);
   }else{
     getObjects(rgb_result);
   }
+
+  ROS_INFO("Found %zu objects", object_detections.size());
 
 }
 

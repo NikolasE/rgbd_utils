@@ -89,11 +89,11 @@ void RunningGaussian::run_test(){
   for (int i=0; i<N; ++i){
     update(meas[i]);
 
-    double m_exp = means[i];
-    double v_exp = vars[i];
+    //    double m_exp = means[i];
+    //    double v_exp = vars[i];
 
     //ROS_INFO("i: %.1f exp: %.1f %.2f  got: %.1f %.2f",meas[i],m_exp,v_exp,mean,var);
-    assert(abs(m_exp-mean)<1e-4 && abs(v_exp-var)<1e-4);
+    //    assert(abs(m_exp-mean)<1e-4 && abs(v_exp-var)<1e-4);
   }
 
   ROS_INFO("RunningGaussian::run_test SUCCESS!");
@@ -178,19 +178,30 @@ void PixelEnvironmentModel::update(int x,int y,float value){
 * points with frame_mask > 0 are not updated. This can be used to only update gaussians with
 * background pixels. (use getForeground_* to compute such a mask)
 */
-void PixelEnvironmentModel::update(const Cloud& cloud, cv::Mat* frame_mask){
+void PixelEnvironmentModel::update(const Cloud& cloud, cv::Mat* frame_mask, int step){
   assert(int(cloud.width) == width_ && int(cloud.height) == height_);
+
+  timing_start("up_pixel");
 
   update_cnt++;
 
-  for (int y=0; y<height_; ++y)
-    for (int x=0; x<width_; ++x){
+  if (mask_set){
+    int cnt = cv::countNonZero(mask_);
+    ROS_INFO("Update: mask has %i pixels",cnt);
+  }else{
+    ROS_INFO("No mask defined");
+  }
+
+  for (int y=0; y<height_; y += step)
+    for (int x=0; x<width_; x += step){
       if (mask_set && mask_.at<uchar>(y,x) == 0) continue;
       if (frame_mask && frame_mask->at<uchar>(y,x) > 0) continue;
       double length = norm(cloud.at(x,y));
       if (length > 0) // check for nans
         gaussians[y][x].update(length);
     }
+
+  timing_end("up_pixel");
 }
 
 
@@ -299,31 +310,32 @@ void PixelEnvironmentModel::getDistance(const Cloud& current, cv::Mat& dists){
 }
 
 
-void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground, cv::Mat* dists){
-//  if (foreground.rows != height_ || foreground.cols != width_ || foreground.type() != CV_8UC1){
-//    foreground = cv::Mat(height_,width_,CV_8UC1);
-//  }
+void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dist,  cv::Mat& foreground, cv::Mat* dists, int step){
+  //  if (foreground.rows != height_ || foreground.cols != width_ || foreground.type() != CV_8UC1){
+  //    foreground = cv::Mat(height_,width_,CV_8UC1);
+  //  }
+
+  // ROS_INFO("foreground step = %i",step);
+  timing_start("GetForeground");
 
   ensureSizeAndType(foreground,width_,height_,CV_8UC1);
 
   if (dists){
     ensureSizeAndType(*dists,width_,height_,CV_32FC1);
     dists->setTo(0);
-
     assert(dists->cols == foreground.cols);
-
   }
 
 
   foreground.setTo(0);
 
-//  float min_ = 1e6;
-//  float max_ = -1e6;
+  //  float min_ = 1e6;
+  //  float max_ = -1e6;
 
-//  int fg_cnt = 0;
+  //  int fg_cnt = 0;
 
-  for (int y=0; y<height_; ++y)
-    for (int x=0; x<width_; ++x){
+  for (int y=0; y<height_; y += step)
+    for (int x=0; x<width_; x += step){
       if (mask_set && mask_.at<uchar>(y,x) == 0) continue;
 
       float mean = gaussians[y][x].mean;
@@ -336,25 +348,37 @@ void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dis
       // foreground if there was no measurement so far or distance to mean value is larger than max_dist
       if (!inited || current + max_dist < mean){
         foreground.at<uchar>(y,x) = 255;
-       // fg_cnt++;
+        // fg_cnt++;
         if (dists){
-          float d=  mean-current;
+          float d =  mean-current;
           dists->at<float>(y,x) = d;
-//          min_ = min(min_,d);
-//          max_ = max(max_,d);
+          //          min_ = min(min_,d);
+          //          max_ = max(max_,d);
         }
       }
 
 
     }
 
-//  ROS_INFO("getForeground_dist: %f %f (%i fg pixels)", min_,max_,fg_cnt);
+  //  ROS_INFO("getForeground_dist: %f %f (%i fg pixels)", min_,max_,fg_cnt);
 
-
+  timing_start("blur");
   //cv::medianBlur(foreground,foreground,3);
 
-//  cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
-//  cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),2);
+  cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),step);
+  cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),step);
+  cv::medianBlur(foreground,foreground,3);
+
+  if (dists && step > 0){
+    cv::dilate(*dists,*dists,cv::Mat(),cv::Point(-1,-1),step);
+    cv::GaussianBlur(*dists,*dists,cv::Size(3,3),3,3);
+  }
+
+  timing_end("blur");
+
+
+
+  timing_end("GetForeground");
 
 }
 

@@ -13,11 +13,15 @@
 
 #include <sensor_msgs/image_encodings.h>
 #include <cv_bridge/cv_bridge.h>
-#include <opencv/cv.h>
-#include <opencv/highgui.h>
+//#include <opencv/cv.h>
+//#include <opencv/highgui.h>
 #include <vector>
 #include <queue>
 #include <limits>
+
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 class RunningGaussian {
 
@@ -100,9 +104,9 @@ public:
   /// update the gaussian at (x,y) with a new value
   void update(int x,int y,float value);
 
-  void update(const Cloud& cloud,cv::Mat* frame_mask = NULL);
+  void update(const Cloud& cloud,cv::Mat* frame_mask = NULL, int step = 1);
 
-  void getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground,cv::Mat* dists = NULL);
+  void getForeground_dist(const Cloud& cloud, float max_dist, cv::Mat& foreground, cv::Mat* dists = NULL, int step = 1);
   void getForeground_prob(const Cloud& cloud, float N, cv::Mat& foreground);
 
 
