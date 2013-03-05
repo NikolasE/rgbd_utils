@@ -277,14 +277,8 @@ public:
   void getCheckerboardArea(std::vector<cv::Point2i>& pts);
 
 
-
-
-
-
   /// image to be shown by the projector
   cv::Mat projector_image;
-
-
 
   /// a simple image for debugging
   cv::Mat test_img;
@@ -391,7 +385,7 @@ public:
   cv::Mat* getTestImg(){return &test_img;}
 
   bool computeProjectionMatrix(float& mean_error, bool do_scaling);
-  bool computeProjectionMatrix_OPENCV(float& mean_error, bool with_distorion);
+  bool computeProjectionMatrix_OPENCV(float& mean_error, float&max_error, bool with_distorion);
 
   bool computeHomography_OPENCV(float& mean_error);
   bool computeHomography_SVD();

@@ -186,8 +186,8 @@ void PixelEnvironmentModel::update(const Cloud& cloud, cv::Mat* frame_mask, int 
   update_cnt++;
 
   if (mask_set){
-    int cnt = cv::countNonZero(mask_);
-    ROS_INFO("Update: mask has %i pixels",cnt);
+    // int cnt = cv::countNonZero(mask_);
+    // ROS_INFO("Update: mask has %i pixels",cnt);
   }else{
     ROS_INFO("No mask defined");
   }
@@ -367,7 +367,7 @@ void PixelEnvironmentModel::getForeground_dist(const Cloud& cloud, float max_dis
 
   cv::dilate(foreground,foreground,cv::Mat(),cv::Point(-1,-1),step);
   cv::erode(foreground,foreground,cv::Mat(),cv::Point(-1,-1),step);
-  cv::medianBlur(foreground,foreground,3);
+//  cv::medianBlur(foreground,foreground,3);
 
   if (dists && step > 0){
     cv::dilate(*dists,*dists,cv::Mat(),cv::Point(-1,-1),step);

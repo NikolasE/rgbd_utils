@@ -51,10 +51,10 @@ inline bool validTriangle(const pcl_Point& p0, const pcl_Point& p1, const pcl_Po
 * @return mesh simple mesh creation. Cloud is organized so that neighbours are well defined
 *
 */
-pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_length, bool do_checks){
- pcl::PolygonMesh mesh;
+void Mesh_visualizer::createMesh(const Cloud& cloud,pcl::PolygonMesh& mesh, float max_edge_length, bool do_checks){
 
 
+  mesh.polygons.clear();
  // ROS_INFO("Creating mesh for %i %i grid", cloud.width, cloud.height);
 
 
@@ -62,9 +62,19 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_
 
  int width = cloud.width;
 
- sensor_msgs::PointCloud2 msg;
- pcl::toROSMsg( cloud, msg);
- mesh.cloud = msg;
+// sensor_msgs::PointCloud2 msg;
+// pcl::toROSMsg( cloud, msg);
+
+// msg.header.frame_id = "boo";
+
+// ROS_INFO("Cloud size: %i %i", msg.width,msg.height);
+
+// if (msg.width == 0){
+//   ROS_WARN("Emptz cloud");
+// }
+
+
+// mesh.cloud = msg;
 
  pcl::Vertices vertices;
 
@@ -102,12 +112,14 @@ pcl::PolygonMesh Mesh_visualizer::createMesh(const Cloud& cloud, float max_edge_
 
   }
 
- if (do_checks)
-  mesh.polygons.resize(mesh.polygons.size());
+// if (do_checks)
+//  mesh.polygons.resize(mesh.polygons.size());
+
+
+// ROS_INFO("created mesh with %zu polygons", mesh.polygons.size());
 
  timing_end("mesh creation");
 
- return mesh;
 }
 
 #else
@@ -476,10 +488,10 @@ bool addLine(const pcl_Point& a, const pcl_Point& b, const pcl_Point& c, float h
 * @param max_z highes intersection line
 * @param height_step distance between adjacent intersection planes
 */
-void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step){
+void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, const Cloud& cloud, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step){
 
- Cloud cloud;
- pcl::fromROSMsg(mesh.cloud, cloud);
+// Cloud cloud;
+// pcl::fromROSMsg(mesh.cloud, cloud);
 
 
  height_lines.clear();
@@ -493,19 +505,11 @@ void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, std::vector<
   height_lines.push_back(current_lines);
  }
 
-
-
-
-
- // for (float height = max_z; height >= min_z; height-=height_step){
-
- //  ROS_INFO("Checking %f", height);
-
-
- //  current_lines.clear();
  PointPair pp;
 
- // loop over all triangles
+ // TODO: for each triangle, check if it contains a height line and compute it.
+
+ // loop over all triangles and over all heights: O( |Triangle|*|height_lines|), so rather slow...
  for (uint i=0; i<mesh.polygons.size(); ++i){
   pcl::Vertices vtc = mesh.polygons[i]; assert(vtc.vertices.size() == 3);
 
@@ -513,14 +517,8 @@ void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, std::vector<
   for (uint h=0; h<heights.size(); ++h){
    float height = heights[h];
 
-
    bool line_found = addLine(cloud.points[vtc.vertices[0]],cloud.points[vtc.vertices[1]],cloud.points[vtc.vertices[2]], height,pp);
-
-
    if (line_found){
-    //    ROS_INFO("ndx: %i %i %i",vtc.vertices[0], vtc.vertices[1], vtc.vertices[2]);
-    //    ROS_INFO("pp: %f %f", pp.first.y(), pp.second.y());
-    // current_lines.push_back(pp);
     height_lines[h].push_back(pp);
 
     // Assumption: not more than one line per triangle
@@ -529,16 +527,10 @@ void Mesh_visualizer::findHeightLines(const pcl::PolygonMesh& mesh, std::vector<
 
   }
 
-  //  if (current_lines.size() > 0){
-  //   ROS_INFO("Found %zu Pointpairs for height %f", current_lines.size(), height);
-  //   height_lines.push_back(current_lines);
-  //  }else{
-  //   // break;
-  //  }
 
  }
 
- ROS_INFO("Found heightlines for %zu different heights", height_lines.size());
+// ROS_INFO("Found heightlines for %zu different heights", height_lines.size());
 
 }
 

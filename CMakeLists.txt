@@ -9,11 +9,32 @@ include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 #  Release        : w/o debug symbols, w/ optimization
 #  RelWithDebInfo : w/ debug symbols, w/ optimization
 #  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-set(ROS_BUILD_TYPE Debug)
+set(ROS_BUILD_TYPE RelWithDebInfo)
+
+rosbuild_init()
+
+
+
+
+
+# QT used only for gl_mesh_viewer (creates own lib)
+# http://qtnode.net/wiki/Qt4_with_cmake
+find_package(Qt4 REQUIRED)
+SET(QT_USE_QTXML TRUE)
+SET(QT_USE_QTOPENGL TRUE)
+ADD_DEFINITIONS(-DQT_NO_KEYWORDS)
+include(${QT_USE_FILE})
+include_directories(${QT_QTOPENGL_INCLUDE_DIR})
+
+QT4_WRAP_CPP(QT_MOC_HPP include/rgbd_utils/gl_mesh_viewer.hpp)
+set (QT_SOURCES src/gl_mesh_viewer.cpp)
+# < QT used only for gl_mesh_viewer (creates own lib) >
+
+
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-pragmas -Wno-deprecated -Wno-unused-function -Wno-unused-but-set-variable")
 
-rosbuild_init()
+
 
 #set the default path for built executables to the "bin" directory
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
@@ -68,8 +89,11 @@ MESSAGE(STATUS "Compiling WITHOUT LibGeometry")
 ENDIF (WITH_LIBGEOMETRY)
 
 
+rosbuild_add_library(gl_viewer ${QT_SOURCES} ${QT_MOC_HPP})
+
 
 rosbuild_add_library(rgbd_utils src/calibration_utils.cpp src/gaussian_model.cpp src/projector_calibrator.cpp src/pinch_detection.cpp src/meshing.cpp src/surface_modeler.cpp src/ants.cpp )#src/exp_map.cpp)
+
 rosbuild_link_boost(rgbd_utils thread signals system)
 
 #rosbuild_add_executable(detection_demo src/main_test.cpp src/gaussian_model.cpp src/pinch_detection.cpp)

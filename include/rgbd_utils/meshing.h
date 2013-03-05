@@ -48,10 +48,10 @@ struct Mesh_visualizer {
  void visualizeMeshLines(const pcl::PolygonMesh& mesh);
  void visualizeHeightLines(const std::vector<Line_collection>& lc);
 
- void findHeightLines(const pcl::PolygonMesh& mesh, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step);
+ void findHeightLines(const pcl::PolygonMesh& mesh,const Cloud& cloud, std::vector<Line_collection>& height_lines, float min_z, float max_z, float height_step);
 
 
- pcl::PolygonMesh createMesh(const Cloud& cloud, float max_length = -1, bool do_checks = false);
+ void createMesh(const Cloud& cloud, pcl::PolygonMesh& mesh,float max_length = -1, bool do_checks = false);
 
  void visualizeHeightLinesOnImage(const std::vector<Line_collection>& height_lines, cv::Mat& img, const cv::Mat& P);
 

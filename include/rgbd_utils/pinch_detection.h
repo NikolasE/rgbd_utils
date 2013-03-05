@@ -252,6 +252,11 @@ private:
 public:
 
 
+  void reset(){
+    tracks.clear();
+  }
+
+
   std::map<int,Tracker_> tracks;
 
   /**
@@ -436,6 +441,7 @@ class Detector  {
   //  std::vector<int> hand_contours;
   cv::Mat detection_area_edge;
   cv::Mat detection_area;
+  std::vector<cv::Point> detection_area_edge_vector; // pixel coordinates of the detection_area_edge
 
 
   bool detection_area_set;

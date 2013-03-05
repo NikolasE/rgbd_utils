@@ -893,7 +893,7 @@ bool Projector_Calibrator::computeHomography_SVD(){
 
 
 
-cv::Point2f   undistort(float x, float y, float fx, float fy,float cx, float cy, cv::Mat dist_coeffs){
+cv::Point2f undistort(float x, float y, float fx, float fy,float cx, float cy, cv::Mat dist_coeffs){
 
 
 
@@ -917,13 +917,13 @@ cv::Point2f   undistort(float x, float y, float fx, float fy,float cx, float cy,
 
   float r2 = xc*xc+yc*yc;
 
-  ROS_INFO("undistort %f %f  %f:",x,y,r2);
+  // ROS_INFO("undistort %f %f  %f:",x,y,r2);
 
   float x_ = xc*(1+k1*r2+k2*r2*r2+k3*r2*r2*r2)+2*p1*xc*yc+p2*(r2*+2*xc);
   float y_ = yc*(1+k1*r2+k2*r2*r2+k3*r2*r2*r2)+2*p2*xc*yc+p1*(r2*+2*yc);
 
 
-  ROS_INFO("x_,y_: %f %f",x_,y_);
+  // ROS_INFO("x_,y_: %f %f",x_,y_);
 
   cv::Point2f res;
   res.x = fx*x_+cx;
@@ -952,7 +952,7 @@ cv::Point2f   undistort(float x, float y, float fx, float fy,float cx, float cy,
  * @see observations_3d, number_of_features_in_images, corners_2d, drawCheckerboard
  *
  */
-bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, bool with_distortion){
+bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, float& max_error, bool with_distortion){
 
 
   ROS_WARN("COMPUTING Projection Matrix with openCV");
@@ -1083,24 +1083,18 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
 
 
 
+  max_error = 0;
 
   for (int i=0; i<N; ++i){
     cv::Point2f projected = reprojected[i];
     cv::Point2f measured = corners_2d.at(i);
 
 
-
-
-
     cv::Point2f  px = applyPerspectiveTrafo(observations_3d.points.at(i),cal.proj_matrix);
-
-    cv::Point2f undis = undistort(px.x,px.y,cal.f_x(),cal.f_y(),cal.c_x(),cal.c_y(),cal.distCoeffs);
-
+    // cv::Point2f undis = undistort(px.x,px.y,cal.f_x(),cal.f_y(),cal.c_x(),cal.c_y(),cal.distCoeffs);
 
 
-
-
-    ROS_INFO("Opencv: %f %f, self: %f %f",projected.x,projected.y,undis.x,undis.y);
+    // ROS_INFO("Opencv: %f %f, self: %f %f",projected.x,projected.y,undis.x,undis.y);
 
     // ROS_INFO("proj: %.1f %.1f (selbst: %.1f %.1f) meas: %.1f %.1f", projected.x,projected.y, px.x,px.y,measured.x,measured.y);
 
@@ -1118,7 +1112,13 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
     total_x += abs(projected.x-measured.x)/N;
     total_y += abs(projected.y-measured.y)/N;
 
-    mean_error += sqrt(pow(projected.x-measured.x,2)+pow(projected.y-measured.y,2))/N;
+
+    float err = sqrt(pow(projected.x-measured.x,2)+pow(projected.y-measured.y,2));
+
+    max_error = max(err,max_error);
+
+
+    mean_error += err/N;
   }
 
 
@@ -1146,7 +1146,7 @@ bool Projector_Calibrator::computeProjectionMatrix_OPENCV(float& mean_error, boo
   //    cout << "ProjectorPosition: " << projector_position_CV << endl;
   //    cout << "ProjectorRotation: " << rotMatrix_CV << endl;
 
-  ROS_INFO("Projection Matrix: mean error: %f (x: %f, y: %f)", mean_error, total_x, total_y);
+  ROS_INFO("Projection Matrix: mean error: %f (max: %f) (x: %f, y: %f)", mean_error,max_error, total_x, total_y);
 
   if (with_distortion)
     cal_cv_with_dist = cal;

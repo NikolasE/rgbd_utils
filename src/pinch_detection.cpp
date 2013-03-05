@@ -156,15 +156,27 @@ void drawObjectContours(Object_tracker<Playing_Piece,Track<Playing_Piece> >& pie
 
 void Detector::setDetectionArea(const cv::Mat& mask){
 
+  ROS_INFO("setting detection area");
+
   detection_area_set = true;
 
   mask.copyTo(detection_area);
 
   dummy = cv::Mat(detection_area.rows,detection_area.cols,CV_8UC1);
-
-
   // compute border of area (used to detect objects entering the area (aka hands)
   cv::Canny(detection_area, detection_area_edge, 1,10);
+
+  detection_area_edge_vector.clear();
+  // store all pixels belonging to the border:
+  for (int x=0;x<detection_area_edge.cols; ++x)
+    for (int y=0;y<detection_area_edge.rows; ++y){
+      // cout << x << " " << y << endl;
+      if (detection_area_edge.at<uchar>(y,x) > 0)
+        detection_area_edge_vector.push_back(cv::Point(x,y));
+    }
+
+  //  ROS_INFO("detection area edge has %zu points", detection_area_edge_vector.size());
+
   //cv::dilate(detection_area_edge, detection_area_edge, cv::Mat(), cv::Point(-1,-1),1);
 }
 
@@ -218,9 +230,12 @@ void Detector::newFrame(const cv::Mat& foreground, const cv::Mat& dists, Cloud* 
   //  cv::imwrite("data/fg_mask.png", detection_area);
 
 
+  timing_start("findcontours");
   foreground.copyTo(foreground_,detection_area);
   cv::findContours(foreground_, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
   foreground.copyTo(foreground_,detection_area); // findcontours changes source image
+  timing_end("findcontours");
+
 
   dists.copyTo(diff);
 
@@ -247,7 +262,9 @@ void Detector::newFrame(const cv::Mat& foreground, const cv::Mat& dists, Cloud* 
       continue;
     }
 
+    timing_start("intersects");
     bool inter = intersectsDetectionAreaBorder_withHeight(contours,i, dists);
+    timing_end("intersects");
 
     intersects.push_back(inter);
     handVisible = handVisible || inter;
