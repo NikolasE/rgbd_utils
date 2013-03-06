@@ -48,10 +48,49 @@ struct Calibration {
   Calibration(){
     camera_matrix = cv::Mat(3,3,CV_32FC1);
     proj_trafo = cv::Mat(3,4,CV_64FC1);
-    distCoeffs = cv::Mat(1,5,CV_32FC1); distCoeffs.setTo(0);
+    distCoeffs = cv::Mat(1,5,CV_64FC1); distCoeffs.setTo(0);
     rvec = cv::Mat(3,1,CV_64FC1); rvec.setTo(0);
     tvec = cv::Mat(3,1,CV_64FC1); tvec.setTo(0);
     projector_position = cv::Mat(3,1,CV_64FC1); projector_position.setTo(0);
+  }
+
+   void copyTo(Calibration& other){
+    proj_matrix.copyTo(other.proj_matrix);
+    rotMatrix.copyTo(other.rotMatrix);
+    camera_matrix.copyTo(other.camera_matrix);
+    distCoeffs.copyTo(other.distCoeffs);
+    proj_trafo.copyTo(other.proj_trafo);
+    rvec.copyTo(other.rvec);
+    tvec.copyTo(other.tvec);
+    projector_position.copyTo(other.projector_position);
+  }
+
+   cv::Point2f distortPoint(const cv::Point2f input);
+   cv::Point2f unDistortPoint(const cv::Point2f input);
+
+
+
+  float k1(){
+    return distCoeffs.at<double>(0);
+  }
+
+  float k2(){
+    return distCoeffs.at<double>(1);
+  }
+
+  float k3(){
+    if (distCoeffs.cols == 4)
+      return 0;
+    else
+      return distCoeffs.at<double>(4);
+  }
+
+  float p1(){
+    return distCoeffs.at<double>(2);
+  }
+
+  float p2(){
+    return distCoeffs.at<double>(3);
   }
 
   float f_x(){
@@ -76,7 +115,7 @@ struct Calibration {
 
 
   bool projectPoint(cv::Point3f d3, cv::Point2f& px);
-   bool projectPoint(pcl_Point d3, cv::Point2f& px);
+  bool projectPoint(pcl_Point d3, cv::Point2f& px);
   bool projectPoints(std::vector<cv::Point3f> d3, std::vector<cv::Point2f>& px);
 
 
@@ -84,6 +123,8 @@ struct Calibration {
 
   bool writeToFile(const std::string& filename);
   bool loadFromFile(const std::string& filename);
+
+  void Testing();
 
 
 private:
@@ -175,7 +216,7 @@ public:
   // cv::Mat proj_Matrix;
 
   /// Projection matrix of projector computed with cv::calibrateCamera
-//  cv::Mat proj_matrix_cv;
+  //  cv::Mat proj_matrix_cv;
 
 
 
@@ -210,16 +251,16 @@ public:
   Calibration cal_cv_no_dist;
 
 
-//  cv::Mat projector_position; /// position of projector in the world system
-//  cv::Mat rotMatrix; /// rotation projector in the world system
-//  cv::Mat camera_matrix; /// internal camera parameters of projector
+  //  cv::Mat projector_position; /// position of projector in the world system
+  //  cv::Mat rotMatrix; /// rotation projector in the world system
+  //  cv::Mat camera_matrix; /// internal camera parameters of projector
 
-//  cv::Mat rotMatrix_CV; /// rotation projector in the world system as computed by openCV
-//  cv::Mat camera_matrix_CV; /// internal camera parameters of projector as computed by openCV
-//  cv::Mat projector_position_CV; /// position of projector in the world system
-//  cv::Mat distCoeffs_CV; /// distortion coefficients for projector
-//  cv::Mat proj_trafo_CV; /// transformation from sandbox to projector' frame
-//  cv::Mat rvec_CV, tvec_CV; /// translation and rotation vector
+  //  cv::Mat rotMatrix_CV; /// rotation projector in the world system as computed by openCV
+  //  cv::Mat camera_matrix_CV; /// internal camera parameters of projector as computed by openCV
+  //  cv::Mat projector_position_CV; /// position of projector in the world system
+  //  cv::Mat distCoeffs_CV; /// distortion coefficients for projector
+  //  cv::Mat proj_trafo_CV; /// transformation from sandbox to projector' frame
+  //  cv::Mat rvec_CV, tvec_CV; /// translation and rotation vector
 
   Cloud kinect_frame_points;
 

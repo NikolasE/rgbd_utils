@@ -57,25 +57,29 @@ void cvMatAffineToglVector(const cv::Mat &M, GLdouble* v){
 GL_Mesh_Viewer::GL_Mesh_Viewer( QWidget* parent)
   : QGLWidget(parent)
 {
+
+  frame_nr = 0;
+
   initializeGL();
   show_texture = false;
   w_ = h_ = -1;
   draw_map = false;
-  undo_distortion = true;
+  undo_distortion = false;
 
   glew_state = 1;
 
   full_screen_texture_id = 0;
 
-  renderScene(false); // render scene without distortion correction
+  // withDistortion(false); // render scene without distortion correction
+
+  undo_distortion = false;
 
   toggleWireframe(false); // render primitives with faces
 
   map_initalized = false;
-  offscreen_rendering_initialized = false;
+  // offscreen_rendering_initialized = false;
 
-
-  FramebufferName = renderedTexture = depthrenderbuffer = 0;
+  // FramebufferName = renderedTexture = depthrenderbuffer = 0;
   // DrawBuffers[0] = GL_COLOR_ATTACHMENT0;
 
 }
@@ -99,7 +103,7 @@ void GL_Mesh_Viewer::showImage(const cv::Mat img){
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
 
-  ROS_INFO("creating new fullscreen texture with id %i", full_screen_texture_id);
+  // ROS_INFO("creating new fullscreen texture with id %i", full_screen_texture_id);
   //  cv::imwrite("texture.png",img);
 
   glTexImage2D(GL_TEXTURE_2D, 0, 3, img.cols, img.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, img.data);
@@ -111,11 +115,10 @@ void GL_Mesh_Viewer::showImage(const cv::Mat img){
   show_fullscreenimage = true;
 }
 
-void GL_Mesh_Viewer::renderScene(bool correct_distortion){
-  show_fullscreenimage = false;
+void GL_Mesh_Viewer::toggleDistortion(bool correct_distortion){
   undo_distortion = correct_distortion;
-  //  resizeGL(width(),height());
-  updateGL();
+  show_fullscreenimage = false;
+  resizeGL(w_,h_);
 }
 
 
@@ -208,9 +211,9 @@ void GL_Mesh_Viewer::drawAnt(Ant* ant){
   }
 
 
-//  // get 3d Position
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  // get 3d Position
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
   cv::Point pos = ant->getPosition();
 
@@ -309,8 +312,8 @@ void GL_Mesh_Viewer::drawPath(Ant* ant){
 
   // ROS_INFO("draw path for ant %i", ant->getId());
 
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
   assert(cloud.width > 1 && cloud.height > 1);
 
@@ -387,8 +390,8 @@ void GL_Mesh_Viewer::showExpMapTexture(){
   if (texture_cv.cols != 256)
     LoadGLTextures();
 
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
   glBindTexture(GL_TEXTURE_2D, texture[0]);   // choose the texture to use.
 
@@ -461,8 +464,8 @@ void GL_Mesh_Viewer::drawMeshWithTexture(){
     LoadGLTextures();
 
 
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
   glBindTexture(GL_TEXTURE_2D, texture[0]);   // choose the texture to use.
 
@@ -550,12 +553,12 @@ void GL_Mesh_Viewer::drawMeshStrip(){
 
   //  ROS_INFO("Mesh size: %i %i",mesh.cloud.width,mesh.cloud.height);
 
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
   pcl_Point p;
 
-//  ROS_INFO("cloud size: %i %i",cloud.width,cloud.height);
+  //  ROS_INFO("cloud size: %i %i",cloud.width,cloud.height);
 
 
   for (uint x = 0; x<cloud.width-1; ++x){
@@ -586,9 +589,9 @@ void GL_Mesh_Viewer::drawMeshStrip(){
 void GL_Mesh_Viewer::drawMesh(){
 
 
-//  // 0.06 ms
-//  Cloud cloud;
-//  pcl::fromROSMsg(mesh.cloud, cloud);
+  //  // 0.06 ms
+  //  Cloud cloud;
+  //  pcl::fromROSMsg(mesh.cloud, cloud);
 
 
   bool normals_valid = (normals.size() == cloud.size());
@@ -853,8 +856,20 @@ bool GL_Mesh_Viewer::setUpProjectorImage_openCV(const cv::Mat& world2projector, 
 
 
   // projection into NDC (internal calibration of camera)
+
+  int w,h;// size of render area
+
+  if (render_into_framebuffer){
+    w = fbo->width();
+    h = fbo->height();
+  }else{
+    w = w_;
+    h = h_;
+  }
+
+
   Eigen::Matrix4d frustrum;
-  build_opengl_projection_for_intrinsics(frustrum,cam_internal,w_,h_,0.1,10); // last two parameters: range of z (near and far plane
+  build_opengl_projection_for_intrinsics(frustrum,cam_internal,w,h,0.1,10); // last two parameters: range of z (near and far plane
 
 
   //  cout << "frustrum" << endl;
@@ -866,24 +881,15 @@ bool GL_Mesh_Viewer::setUpProjectorImage_openCV(const cv::Mat& world2projector, 
 
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  glOrtho(0,w_,h_,0,-10,10);
+  glOrtho(0,w,h,0,-10,10);
   glMultMatrixd(fru);
 
-  GLdouble proj[16];
-  glGetDoublev(GL_PROJECTION,proj);
-  glVectorToCvMat(proj,P);
-
-  //  cout << "GL Projection Matrix " << endl << P << endl;
-
-
-  //  cout << "projection (after Ortho) " << endl;
-  //  printMatrix(frustrum);
-
-  //  glFrustum(-0.5,0.5,-0.5,0.5,0,5);
-
+  //  GLdouble proj[16];
+  //  glGetDoublev(GL_PROJECTION,proj);
+  //  glVectorToCvMat(proj,P);
 
   // scaling from NDC onto image coordinates
-  glViewport(0,0,w_,h_);
+  glViewport(0,0,w,h);
 
 
   return true;
@@ -938,215 +944,51 @@ bool GL_Mesh_Viewer::setUpProjectorImage(){
 
 
 
-void GL_Mesh_Viewer::initOffscreenFrameBuffer(){
-
-//  if (glew_state != GLEW_OK){
-
-//    glew_state = glewInit();
-//    if (glew_state != GLEW_OK)
-//      {
-//        /* Problem: glewInit failed, something is seriously wrong. */
-//        fprintf(stderr, "Error: %s\n", glewGetErrorString(glew_state));
-//        assert(false);
-//        return;
-//      }else{
-//      ROS_INFO("GLEW initialized");
-//    }
-
-//  }
-
-//  //  if (offscreen_rendering_initialized){ // avoid memory leaks if the image is resized during runtime
-//  //    glDeleteFramebuffers(1,&FramebufferName);
-//  //    glDeleteTextures(1,&renderedTexture);
-//  //    glDeleteBuffers(1,&depthrenderbuffer);
-//  //  }
-//  glEnable(GL_TEXTURE_2D);
-
-//  glGenFramebuffers(1, &FramebufferName);
-//  glBindFramebuffer(GL_FRAMEBUFFER, FramebufferName);
-//  glGenTextures(1, &renderedTexture);
-
-
-//  glBindTexture(GL_TEXTURE_2D, renderedTexture);
-//  glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, w_, h_, 0,GL_RGB, GL_UNSIGNED_BYTE, 0);
-//  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-//  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-//  glGenRenderbuffers(1, &depthrenderbuffer);
-
-//  glBindRenderbuffer(GL_RENDERBUFFER, depthrenderbuffer);
-
-//  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w_, h_);
-//  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthrenderbuffer);
-
-//  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D, renderedTexture, 0);
-
-//  DrawBuffers[0] = GL_COLOR_ATTACHMENT0;
-//  glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
-
-//  if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-//    ROS_INFO("framebuffer fail");
-//    assert(false);
-//  }
-
-//  ROS_INFO("FBO: %i %i %i", FramebufferName, renderedTexture, depthrenderbuffer);
-
-
-//  offscreen_rendering_initialized = true;
-
-//  // link to visible framebuffer
-//  // glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-}
-
 void GL_Mesh_Viewer::drawSceneDisortion(){
 
-  ROS_INFO("drawing without distortion");
+  ROS_INFO("drawing WITH distortion correction");
 
-  // GLenum err;
-
-
-  // http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-14-render-to-texture/
-
-  // only used if distortion is corrected
-
-  /*
-  if (!offscreen_rendering_initialized){
-    initOffscreenFrameBuffer();
-  }
-*/
-  //  GLuint FramebufferName = 0;
-  //  GLuint renderedTexture;
-  //  GLenum DrawBuffers[2];DrawBuffers[0] = GL_COLOR_ATTACHMENT0;
-  //  GLuint depthrenderbuffer;
-  if (glew_state != GLEW_OK){
-
-    glew_state = glewInit();
-    if (glew_state != GLEW_OK)
-      {
-        /* Problem: glewInit failed, something is seriously wrong. */
-        fprintf(stderr, "Error: %s\n", glewGetErrorString(glew_state));
-        assert(false);
-        return;
-      }else{
-      ROS_INFO("GLEW initialized");
-    }
-
-  }
   glEnable(GL_TEXTURE_2D);
 
-  glGenFramebuffers(1, &FramebufferName);
-  glBindFramebuffer(GL_FRAMEBUFFER, FramebufferName);
+  // render into framebuffer:
 
-
-  //DrawBuffers[0] = GL_COLOR_ATTACHMENT0;
-//  GLenum DrawBuffers[2] = {GL_COLOR_ATTACHMENT0};
-//  glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
-
-  glGenTextures(1, &renderedTexture);
-
-  glBindTexture(GL_TEXTURE_2D, renderedTexture);
-
-
-  glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, w_, h_, 0,GL_RGB, GL_UNSIGNED_BYTE, 0);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-
-  glGenRenderbuffers(1, &depthrenderbuffer);
-
-  glBindRenderbuffer(GL_RENDERBUFFER, depthrenderbuffer);
-
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w_, h_);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthrenderbuffer);
-
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D, renderedTexture, 0);
-
-
-
-
-  if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-    ROS_INFO("framebuffer fail");
-    assert(false);
-  }else{
-    ROS_INFO("Framebuffer setup finished");
+  if (!fbo->isValid()){
+    fbo = new QGLFramebufferObject(w_,h_);
   }
 
-  //  glBindFramebuffer(GL_FRAMEBUFFER, FramebufferName);
-  //  glBindTexture(GL_TEXTURE_2D, renderedTexture);
-  //  glBindRenderbuffer(GL_RENDERBUFFER, depthrenderbuffer);
 
-  // normal rendering, but now into the frameBuffer
-
-  ROS_INFO("FBO: %i %i %i", FramebufferName, renderedTexture, depthrenderbuffer);
-
-
-  //initOffscreenFrameBuffer();
-//  glBindFramebuffer(GL_FRAMEBUFFER, FramebufferName);
-//  glEnable(GL_TEXTURE_2D);
-
-//  glBindFramebuffer(GL_FRAMEBUFFER, FramebufferName);
-
-  if (false){
-    drawScene();
-    //    return;
-  }else{
-    ROS_INFO("rendering ddddd");
+  glViewport( 0, 0, w_, h_ );
+  glMatrixMode( GL_PROJECTION );
+  glLoadIdentity();
+  glFrustum(-1.0,1.0,-2.0,2.0, 1, 3);
+  glMatrixMode( GL_MODELVIEW );
 
 
-    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  timing_start("render to framebuffer");
 
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+  fbo->bind();
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0.0f, w_, h_, 0.0f, -10.0f, 10.0f);
+  render_into_framebuffer = true; // use size of invisible framebuffer during rendering
+  drawScene();
+  render_into_framebuffer = false;
 
-    glViewport(0,0,w_,h_);
+  fbo->release();
+  timing_end("render to framebuffer");
 
-    glEnable(GL_DEPTH_TEST);
-
-
-    glBegin(GL_TRIANGLES);
-    glColor3f(1,0,0);
-    glVertex3f(0,0,0);
-
-    glColor3f(0,1,0);
-    glVertex3f(0,h_,0);
-
-    glColor3f(0,0,1);
-    glVertex3f(w_,0,0);
+  //  char fn[100];
+  //  sprintf(fn,"buffer_img%i.png",frame_nr++);
+  //  QImage img = fbo->toImage();
+  //  img.save(fn);
 
 
-    float z = -5;
+  glBindTexture(GL_TEXTURE_2D, fbo->texture()); // use created texture during painting
 
-    glColor3f(1,0,0);
-    glVertex3f(0,0,z);
+  // draw points with uv coordinate not within [0,1] black
+  glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER  );
+  glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER  );
+  float color[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+  glTexParameterfv( GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, color );
 
-    glColor3f(0,1,0);
-    glVertex3f(w_,h_,z);
-
-
-    glColor3f(0,0,1);
-    glVertex3f(w_,0,z);
-
-    glEnd();
-
-  }
-
-  glBindFramebuffer(GL_FRAMEBUFFER, 0); // again draw on visible Framebuffer
-  glEnable(GL_TEXTURE_2D);
-  glBindTexture(GL_TEXTURE_2D, renderedTexture);
-
-  ROS_INFO("binding texture %i", renderedTexture);
-
-  //    if (texture_cv.cols == 0)
-  //      LoadGLTextures();
-
-  //    glBindTexture(GL_TEXTURE_2D, texture[0]);   // choose the texture to use.
-
-  //  ROS_INFO("Binding to textures %i", renderedTexture);
 
   glColor3f(1,1,1);
 
@@ -1164,26 +1006,121 @@ void GL_Mesh_Viewer::drawSceneDisortion(){
   glViewport(0,0,w_,h_);
 
 
-  glBegin(GL_QUADS);
+  int step = 10;
 
-  float s = 2;
-
-  glTexCoord2f(0,1*s);
-  glVertex3f(0,0,0);
-
-  glTexCoord2f(1*s,1*s);
-  glVertex3f(w_,0,0);
-
-  glTexCoord2f(1*s,0);
-  glVertex3f(w_,h_,0);
-
-  glTexCoord2f(0,0);
-  glVertex3f(0,h_,0);
+  float cx = proj_calibration.c_x();
+  float cy = proj_calibration.c_y();
 
 
-  glEnd();
+  cv::Point2f distorted;
+  distorted = proj_calibration.distortPoint(cv::Point2f(cx,cy));
 
-  ROS_INFO("rendering finished");
+  // ROS_INFO("center point: %f %f to %f %f",cx,cy,distorted.x,distorted.y);
+
+  for (float y = 0; y <= h_+step; y+= step){
+    glBegin(GL_TRIANGLE_STRIP);
+
+    for (float x = 0; x <= w_+step; x+=step){
+
+      distorted = proj_calibration.distortPoint(cv::Point2f(x,h_-y));
+      glTexCoord2f(x/w_,y/h_);
+      glVertex3f(distorted.x,distorted.y,0);
+
+      float y_next = y+step;
+
+      distorted = proj_calibration.distortPoint(cv::Point2f(x,h_-y_next));
+
+      glTexCoord2f(x/w_,y_next/h_);
+      glVertex3f(distorted.x,distorted.y,0);
+
+    }
+
+    glEnd();
+
+  }
+  glBindTexture(GL_TEXTURE_2D,0);
+
+
+
+  // enable to overlay a visualization of the distortion
+  bool show_distortion_graphic = false;
+
+  if (show_distortion_graphic){
+
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0.0f, w_, h_, 0.0f, 0.0f, 1.0f);
+
+    glViewport(0,0,w_,h_);
+
+    glDisable(GL_DEPTH_TEST);
+
+    //      glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glLineWidth(1);
+    glPointSize(1);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+    int step_ = 30;
+    // render points (very short lines are not rendered
+    glBegin(GL_POINTS);
+    for (int y = 0; y <= h_; y+= step_){
+      for (int x = 0; x <= w_; x+=step_){
+        glColor3f(0,1,1);
+        glVertex3f(x,y,0);
+      }
+    }
+    glEnd();
+
+    // mark center of distortion
+    glPointSize(10);
+    glBegin(GL_POINTS);
+    glColor3f(1,0,0);
+    glVertex3f(proj_calibration.c_x(),proj_calibration.c_y(),0);
+    glEnd();
+
+    glBegin(GL_LINES);
+
+    float dist_sum = 0;
+    int cnt = 0;
+
+    float max_dist = 0;
+
+    for (int y = 0; y <= h_; y+= step_){
+      for (int x = 0; x <= w_; x+= step_){
+
+        cv::Point2f res,undis;
+        res = proj_calibration.distortPoint(cv::Point2f(x,y));
+        // undis = proj_calibration.unDistortPoint(cv::Point2f(res.x,res.y));
+        // ROS_INFO("pt: %i %i, dist: %f %f, undis: %f %f, (err: %f)", x,y,res.x,res.y,undis.x,undis.y,dist(cv::Point2f(x,y),undis));
+
+        //res = proj_calibration.unDistortPoint(cv::Point2f(x,y));
+
+        glColor3f(1,0,0);
+        glVertex3f(x,y,0);
+
+        glColor3f(0,1,1);
+        glVertex3f(res.x,res.y,0);
+
+        dist_sum += dist(cv::Point2f(x,y),res);
+        max_dist = max(max_dist, dist(cv::Point2f(x,y),res));
+        cnt++;
+      }
+    }
+
+    glEnd();
+
+    // ROS_INFO("Mean dist: %f, max: %f", dist_sum/cnt, max_dist);
+
+    return;
+
+  }
+
 
 }
 
@@ -1197,7 +1134,7 @@ void GL_Mesh_Viewer::renderFullScreenImage(){
 
   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  ROS_INFO("drawing fullscrenn texture with id %i",full_screen_texture_id);
+  // ROS_INFO("drawing fullscrenn texture with id %i",full_screen_texture_id);
 
   glEnable(GL_TEXTURE_2D);
 
@@ -1211,9 +1148,6 @@ void GL_Mesh_Viewer::renderFullScreenImage(){
   glOrtho(0.0f, w_, h_, 0.0f, 0.0f, 1.0f);
 
   glViewport(0,0,w_,h_);
-
-  //  cv::imwrite("full.png", full_screen_image);
-
 
   if ( full_screen_image.cols != w_ || full_screen_image.rows != h_){
     ROS_WARN("Rendering image of size %i %i on screen with size %i %i", full_screen_image.cols,full_screen_image.rows, w_,h_);
@@ -1341,23 +1275,10 @@ void GL_Mesh_Viewer::renderTracks(){
 }
 
 
-void GL_Mesh_Viewer::drawScene(){
+void GL_Mesh_Viewer:: drawScene(){
 
 
   timing_start("paintgl");
-
-  // setUpIlumination();
-
-  // ros::Time now_render = ros::Time::now();
-  //   if (draw_map)
-  //  setUpMapImage();
-  // else
-  //
-
-  //  ROS_INFO("XXXXXXXXXX NEW VRESION XXXXXXXXXX");
-
-  //  simulateGlPipeline(0,0,0);
-
 
   if (render_map_image){
     if (!setUpMapImage()){
@@ -1371,13 +1292,6 @@ void GL_Mesh_Viewer::drawScene(){
     }
   }
 
-  //   ROS_INFO("XXXXXXXXXX OLD VRESION XXXXXXXXXX");
-  //  if (!setUpProjectorImage()) // fails if no projection matrix was defined
-  //    return;
-  //  simulateGlPipeline(0,0,0);
-
-
-  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   if (show_texture){
     // ROS_INFO("showing texture");
@@ -1386,7 +1300,7 @@ void GL_Mesh_Viewer::drawScene(){
     drawMeshStrip();
   }
 
-  // visualize objects and gestures
+  //  // visualize objects and gestures
   renderTracks();
 
 
@@ -1412,7 +1326,7 @@ void GL_Mesh_Viewer::drawScene(){
   //   drawMesh();
   // }
 
-  // timing_end("paintgl");
+  timing_end("paintgl");
 
 }
 
@@ -1420,8 +1334,30 @@ void GL_Mesh_Viewer::drawScene(){
 QPixmap GL_Mesh_Viewer::getMapImage(int w, int h){
 
   render_map_image = true; // used to select the correct OpenGL-matrices during painting
+
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+
+
+  int w_old = w_;
+  int h_old = h_;
+
   QPixmap pixmap = renderPixmap(w,h);
   render_map_image = false;
+
+  h_ = h_old; w_ = w_old;
+
+  resizeGL(w_old,h_old);
+
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+
+  glMatrixMode(GL_MODELVIEW);
+  glPopMatrix();
+
 
   return pixmap;
 
@@ -1432,23 +1368,32 @@ QPixmap GL_Mesh_Viewer::getMapImage(int w, int h){
 void GL_Mesh_Viewer::paintGL()
 {
 
+
   if (show_fullscreenimage){
     renderFullScreenImage();
     return;
   }
 
-  if (true || undo_distortion){
-    if (render_map_image){
-      ROS_INFO("Trying to undistort map image...");
-    }
+
+  if (render_map_image){
+    ROS_INFO("rendering nmap");
+    drawScene();
+    return;
+  }
+
+
+  if (undo_distortion){
     drawSceneDisortion();
     return;
   }else{
     drawScene();
   }
 
-//  drawScene();
-//  ROS_INFO("paintGL finished");
+}
+
+
+void GL_Mesh_Viewer::setProjectorCalibration(Calibration& proj_calib){
+  proj_calib.copyTo(proj_calibration);
 }
 
 
@@ -1461,6 +1406,7 @@ void GL_Mesh_Viewer::initializeGL()
 {
   glClearColor( 0.0, 0.0, 0.0, 0.0 ); // Let OpenGL clear to black
   glShadeModel( GL_SMOOTH ); // we want smooth shading . . . try GL_FLAT if you like
+
 }
 
 /*--------------------------------------------------------------------------*/
@@ -1472,12 +1418,11 @@ void GL_Mesh_Viewer::resizeGL( int w, int h )
   w_ = w;
   h_ = h;
 
-  //  ROS_INFO("Newframebuffer after resize:");
-  //  initOffscreenFrameBuffer();
-  //  ROS_INFO("offscreen texture has id %i",renderedTexture);
-//    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  // use larger framebuffer to improve quality of texture before distortion
+  int scale = 1;
+  makeCurrent();
+  fbo = new QGLFramebufferObject(scale*w_,scale*h_);
 
-  // offscreen_rendering_initialized = false; // create new framebuffer if needed
 
   glViewport( 0, 0, (GLint)w, (GLint)h );
   glMatrixMode( GL_PROJECTION );

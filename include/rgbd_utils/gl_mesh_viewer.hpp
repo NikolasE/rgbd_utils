@@ -2,16 +2,16 @@
 #define GL_MESH_VIEWER_H
 
 #include <GL/glew.h>
-
+#include <QtOpenGL>
 #include <QtGui/QMainWindow>
 #include <QApplication>
-// #include <QtOpenGL/qgl.h>
+
 #include "rgbd_utils/type_definitions.h"
 #include "rgbd_utils/meshing.h"
 #include "rgbd_utils/ants.h"
 #include "rgbd_utils/pinch_detection.h"
+#include "rgbd_utils/projector_calibrator.h"
 
-// #include <GL/glfw.h>
 
 
 #include <QGLWidget>
@@ -22,7 +22,7 @@ class GL_Mesh_Viewer : public QGLWidget
 
 private:
 
-
+  int frame_nr;
 
   /// storage for one texture
   GLuint texture[1];
@@ -54,11 +54,18 @@ private:
 
   bool render_map_image;
 
+  QGLFramebufferObject *fbo;
 
-  void initOffscreenFrameBuffer();
-  bool offscreen_rendering_initialized;
-  GLuint FramebufferName, renderedTexture,depthrenderbuffer;
+  // cv::Mat dist_params; /// projector's distortion parameters
+
+  Calibration proj_calibration;/// projector's full calibration
+
+//  void initOffscreenFrameBuffer();
+//  bool offscreen_rendering_initialized;
+//  GLuint FramebufferName, renderedTexture,depthrenderbuffer;
 //  GLenum DrawBuffers[2];
+
+
 
 public:
   GL_Mesh_Viewer( QWidget* parent);
@@ -92,8 +99,10 @@ public:
 
   void LoadGLTextures();
 
-  void renderScene(bool correct_distortion);
+  void withDistortion(bool correct_distortion);
 
+
+  void setProjectorCalibration(Calibration& proj_calib);
 
 
   Object_tracker<Grasp,Track<Grasp> >* grasp_tracker;
@@ -184,12 +193,12 @@ protected:
 
   cv::Point2f simulateGlPipeline(float x, float y, float z);
 
-  int w_,h_;
+
 
 
   bool undo_distortion;
 
-  bool show_fullscreenimage;
+
   GLuint full_screen_texture_id;
   cv::Mat full_screen_image;
 
@@ -197,6 +206,9 @@ protected:
 
 
 public:
+  int w_,h_;
+  bool show_fullscreenimage;
+  bool withDistortion(){return undo_distortion;}
 
   /// @todo make private
   pcl::PolygonMesh mesh;

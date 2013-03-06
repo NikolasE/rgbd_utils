@@ -116,7 +116,6 @@ float Projector_Calibrator::eval_projection_matrix_Checkerboard(Cloud& corners, 
 
   }
 
-
   //cv::imwrite("board_evaluation.png", distortion_image);
 
   error_cv_with /= current_projector_corners.size();
@@ -230,23 +229,48 @@ bool Projector_Calibrator::eval_projection_matrix_disc(Cloud& mean_c, std::strin
   cv::line(cpy, cv::Point(0,mom_center.y),cv::Point(cpy.rows, mom_center.y),CV_RGB(255,0,0),1);
 
 
-  pcl_Point mean = getInterpolatedPoint(mom_center);
+  const pcl_Point mean = getInterpolatedPoint(mom_center);
+  cv::Point3f mean_cv(mean.x,mean.y,mean.z);
+
 
   projector_image.setTo(0);
 
   cv::Point2f px;
   if (cal_cv_with_dist.projectPoint(mean, px)){
     cv::circle(projector_image, px, 2, CV_RGB(0,255,0), -1);
+    ROS_INFO("pos with distortion: %f %f",px.x,px.y);
   }
 
-  if (cal_cv_no_dist.projectPoint(mean, px)){
-    cv::circle(projector_image, px, 2, CV_RGB(0,0,255), -1);
-  }
+//  cv::Point2f undis = cal_cv_with_dist.unDistortPoint(px);
+//  ROS_INFO("undistorted: %f %f", undis.x,undis.y);
 
 
-  if (cal_dlt_with_norm.projectPoint(mean, px)){
-    cv::circle(projector_image, px, 2, CV_RGB(255,0,0), -1);
-  }
+
+
+  cv::Point2f no_dist;
+  applyPerspectiveTrafo(mean_cv, cal_cv_with_dist.proj_matrix,no_dist);
+  cv::circle(projector_image, no_dist, 5, CV_RGB(0,0,255), 2);
+  ROS_INFO("pos without distortion: %f %f",no_dist.x,no_dist.y);
+
+
+//  cv::Point2f distorted = cal_cv_with_dist.distortPoint(no_dist);
+//  ROS_INFO("distorted: %f %f",distorted.x,distorted.y);
+
+//  cv::circle(projector_image, distorted, 5, CV_RGB(255,0,255), 2);
+//  ROS_INFO("pos without distortion: %f %f",no_dist.x,no_dist.y);
+
+
+
+  //  if (cal_cv_no_dist.projectPoint(mean, px)){
+  //    cv::circle(projector_image, px, 2, CV_RGB(0,0,255), -1);
+  //    ROS_INFO("pos without distortion: %f %f",px.x,px.y);
+  //  }
+
+
+
+  //  if (cal_dlt_with_norm.projectPoint(mean, px)){
+  //    cv::circle(projector_image, px, 2, CV_RGB(255,0,0), -1);
+  //  }
 
 
 
@@ -398,6 +422,75 @@ Projector_Calibrator::Projector_Calibrator(){
 }
 
 
+
+void Calibration::Testing(){
+
+  vector<cv::Point3f> Ps;
+  Ps.push_back(cv::Point3f(-0.2,0.2,0));
+  Ps.push_back(cv::Point3f(0.2,-0.2,0));
+  Ps.push_back(cv::Point3f(0.2,-0.2,1));
+  Ps.push_back(cv::Point3f(0.2,-0.2,-1));
+  Ps.push_back(cv::Point3f(0.6,-0.2,-1));
+  Ps.push_back(cv::Point3f(0.2,-1,-1));
+
+
+  for(float x = -2; x<2; x+=0.1)
+    for(float y = -2; y<2; y+=0.1)
+      for(float z = -1; z<1; z+=0.1)
+        Ps.push_back(cv::Point3f(x,y,z));
+
+
+  float w = c_x()*2;
+  float h = c_y()*2;
+
+  int checked_cnt = 0;
+
+  for (uint i=0; i<Ps.size(); ++i){
+
+    cv::Point3f P = Ps[i];
+
+    cv::Point2f px;
+    projectPoint(P,px);
+
+
+    cv::Point2f px_no_dist = applyPerspectiveTrafo(P,proj_matrix);
+
+    cout << "dist: " << distCoeffs << endl;
+    ROS_INFO("P: %f %f %f, with dist: %f %f, no dist: %f %f", P.x,P.y,P.z,px.x,px.y,px_no_dist.x,px_no_dist.y);
+
+
+    if (px_no_dist.x < 0 || px_no_dist.x > w || px_no_dist.y < 0 || px_no_dist.y > h){
+      ROS_INFO("point not visible (w,h: %.1f %f.1)",w,h);
+      continue;
+    }
+
+
+
+    checked_cnt++;
+
+    cv::Point2f undis =  unDistortPoint(px);
+    cv::Point2f dis =  distortPoint(px_no_dist);
+
+    ROS_INFO("undis: %f %f to %f %f, dist: %f",px.x,px.y, undis.x, undis.y, dist(undis, px_no_dist));
+    ROS_INFO("dis: %f %f to %f %f, dist: %f",px_no_dist.x,px_no_dist.y,dis.x, dis.y, dist(dis, px));
+
+    float n = max(1.0,0.01*sqrt(px.x*px.x+px.y*px.y));
+    ROS_INFO("threshold: %f",n);
+
+    assert(dist(undis, px_no_dist) < n);
+    assert( dist(dis, px) < n);// less than one pixel difference
+
+
+  }
+
+  ROS_WARN("checked %i of %zu points (%.1f %%)", checked_cnt, Ps.size(), checked_cnt*100.0/Ps.size());
+
+  assert(false);
+
+
+}
+
+
 /**
  * @brief Projector_Calibrator::initFromFile
  * @param msg  Debug Information
@@ -436,6 +529,9 @@ void Projector_Calibrator::initFromFile(std::stringstream& msg){
   cal_dlt_with_norm.loadFromFile("cal_dlt_with_norm");
   cal_cv_with_dist.loadFromFile("cal_cv_with_dist");
   cal_cv_no_dist.loadFromFile("cal_cv_no_dist");
+
+  // cal_cv_with_dist.Testing();
+
 
   //  msg << endl;
 
@@ -2599,6 +2695,54 @@ bool Calibration::writeToFile(const std::string& filename)
 }
 
 
+cv::Point2f Calibration::unDistortPoint(const cv::Point2f input){
+
+  cv::Mat in(1, 1, CV_32FC2, cv::Scalar(input.x, input.y));
+  cv::Mat out(1,1,CV_32FC2);
+
+  cv::undistortPoints(in,out,camera_matrix,distCoeffs);
+
+  cv::Vec2f o = out.at<cv::Vec2f>(0);
+  cv::Point2f res;
+  res.x = o[0]*f_x()+c_x();
+  res.y = o[1]*f_y()+c_y();
+
+  return res;
+}
+
+
+cv::Point2f Calibration::distortPoint(const cv::Point2f input){
+
+
+  //  ROS_INFO("cx: %f cy: %f fx: %f, fy: %f", c_x(),c_y(),f_x(),f_y());
+
+  float x_ = (input.x-c_x())/f_x();
+  float y_ = (input.y-c_y())/f_y();
+
+  float r2 = x_*x_+y_*y_;
+
+  //  ROS_INFO("input: %f %f , x_,y_: %f %f,r2: %f", input.x,input.y,x_,y_,r2);
+
+  float radial_distortion = (1+k1()*r2+k2()*r2*r2+k3()*r2*r2*r2);
+
+  float x = x_*radial_distortion+ 2*p1()*x_*y_+p2()*(r2+2*x_*x_);
+  float y = y_*radial_distortion+ 2*p2()*x_*y_+p1()*(r2+2*y_*y_);
+
+  cv::Point2f result;
+
+  //   ROS_INFO("rd: %f, x,y: %f %f   %f  %f", radial_distortion,x,y,f_x()*x+c_x(),f_y()*y+c_y());
+
+  result.x = f_x()*x+c_x();
+  result.y = f_y()*y+c_y();
+
+
+
+
+  // ROS_INFO("distort: %f %f to  %f %f", input.x,input.y, result.x,result.y);
+
+  return result;
+}
+
 bool Calibration::loadFromFile(const std::string& filename)
 {
 
@@ -2667,7 +2811,7 @@ bool Calibration::projectPoint(cv::Point3f d3, cv::Point2f& px){
 
   checkCamMatrix();
 
-  if (cv::sum(distCoeffs).val[0] < 1e-3){
+  if (abs(cv::norm(distCoeffs,cv::NORM_INF)) < 1e-3){
     px = applyPerspectiveTrafo(d3,proj_matrix);
   }else{
     vector<cv::Point3f> foo;
@@ -2677,7 +2821,6 @@ bool Calibration::projectPoint(cv::Point3f d3, cv::Point2f& px){
     cv::projectPoints(foo,rvec,tvec,camera_matrix,distCoeffs,bar);
 
     px = bar[0];
-
   }
 
   return true;
