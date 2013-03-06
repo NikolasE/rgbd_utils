@@ -79,11 +79,12 @@ Cloud computeMean(const std::vector<Cloud>& clouds);
 
 Cloud removeMean(const Cloud& reference, const Cloud cloud, float max_dist, std::vector<cv::Point2i>* valids = NULL);
 
-
+pcl_Point interpolate(const pcl_Point& p1, const pcl_Point& p2, float alpha);
 float dist(const cv::Point& a, const cv::Point& b);
 cv::Point2f mean(const cv::Point& a, const cv::Point& b);
 void add(pcl_Point& a,const pcl_Point& b);
 void div(pcl_Point& a, float d);
+void mult(pcl_Point& a, float d);
 pcl_Point sub(const pcl_Point& a,const pcl_Point& b);
 float dist(const pcl_Point& a,const pcl_Point& b);
 float dist_sq(const pcl_Point& a,const pcl_Point& b);

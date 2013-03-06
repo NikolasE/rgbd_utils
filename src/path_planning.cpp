@@ -5,7 +5,7 @@
  *      Author: lengelhan
  */
 
-#include "rgbd_utils/ants.h"
+#include "rgbd_utils/path_planning.h"
 
 
 using namespace boost;
@@ -19,6 +19,7 @@ void Path_planner::printParameters(){
   cout << "path_length_factor " << path_length_factor << endl;
   cout << "enemy_factor " << enemy_factor << endl;
   cout << "hillside_cost_factor " << hillside_cost_factor << endl;
+  cout << "scale " << scale << endl;
 }
 
 
@@ -370,11 +371,11 @@ void Path_planner::createRangeMarker(visualization_msgs::Marker& marker, const s
   for (uint i=0; i<N+1; ++i){
     pcl_Point  P = model.at(contour[i%N].x,contour[i%N].y);
 
-//    col.r = path_colors[i].val[0]/255;
-//    col.g = path_colors[i].val[1]/255;
-//    col.b = path_colors[i].val[2]/255;
+    //    col.r = path_colors[i].val[0]/255;
+    //    col.g = path_colors[i].val[1]/255;
+    //    col.b = path_colors[i].val[2]/255;
 
-//    marker.colors.push_back(col);
+    //    marker.colors.push_back(col);
 
     p.x = P.x;
     p.y = P.y;
@@ -413,8 +414,22 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
   std_msgs::ColorRGBA col;
   col.a = 1;
 
+
+  ROS_INFO("creating marker");
+  createModel();
+  Cloud foo = model;
+
+
+  for (uint i=0; i<10; ++i){
+    pcl_Point p =foo.at(i);
+    ROS_INFO("cloud: %f %f %f", p.x,p.y,p.z);
+  }
+
+  ROS_INFO("Creating Path marker for track of size %zu", path.size());
   for (uint i=0; i<path.size(); ++i){
-    pcl_Point  P = model.at(path[i].x,path[i].y);
+    pcl_Point  P = foo.at(path[i].x,path[i].y);
+
+    // ROS_INFO("marker: %f %f %f",P.x,P.y,P.z);
 
     col.r = path_colors[i].val[0]/255;
     col.g = path_colors[i].val[1]/255;
@@ -430,6 +445,38 @@ void Path_planner::createPathMarker(visualization_msgs::Marker& marker){
   }
 
 }
+
+Cloud Path_planner::createModel(){
+  Cloud cloud;
+  cloud.reserve(height_map.cols*height_map.rows);
+
+  pcl_Point p;
+  p.r = 0;
+  p.g = 0;
+  p.b = 255;
+
+  ROS_INFO("creating model cellsize: %f, heightmap: %i %i", cell_size_m_, height_map.rows,height_map.cols);
+
+  pcl_Point nap; nap.x = nap.y = nap.z = std::numeric_limits<float>::quiet_NaN();
+
+  for (int y=0; y<height_map.rows; ++y){
+    p.y = y*cell_size_m_;
+    for (int x=0; x<height_map.cols; ++x){
+      p.x = x*cell_size_m_;
+      p.z = height_map.at<float>(y,x);
+     // ROS_INFO("x,y: %i %i, cellsize: %f, pos: %f %f %f",x,y,cell_size_m_,p.x,p.y,p.z);
+      cloud.push_back(p);
+
+    }
+  }
+
+  cloud.width = height_map.cols;
+  cloud.height = height_map.rows;
+
+  return cloud;
+
+}
+
 
 
 void Path_planner::getDistanceImage(cv::Mat & img, float* threshold){
@@ -467,16 +514,16 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
   cv::Mat mask;
   distanceMap.copyTo(mask);
 
-//  double m,x;
-//  cv::minMaxLoc(mask, &m,&x);
-//  ROS_INFO("Range: %f to %f  threshold: %f",m,x,threshold);
+  //  double m,x;
+  //  cv::minMaxLoc(mask, &m,&x);
+  //  ROS_INFO("Range: %f to %f  threshold: %f",m,x,threshold);
 
   cv::threshold(mask,mask,threshold,255,CV_THRESH_BINARY_INV); // remove everything above threshold, set rest to 1
   cv::Mat cpy;
   mask.convertTo(cpy, CV_8UC1);
 
-//  cv::namedWindow("threshold");
-//  cv::imshow("threshold", mask);
+  //  cv::namedWindow("threshold");
+  //  cv::imshow("threshold", mask);
 
   std::vector<std::vector<cv::Point> > contours;
   std::vector<cv::Vec4i> hierarchy;
@@ -494,9 +541,40 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
   }
 
 
-//  ROS_INFO("contour: %zu", contour.size());
+  //  ROS_INFO("contour: %zu", contour.size());
 }
 
+
+void Path_planner::setHeightMap(const cv::Mat& height, float cell_size_m, bool compute_model){
+  assert(height.type() == CV_32FC1);
+  height.copyTo(height_map);
+
+  ROS_INFO("setgheight,.cell sie: %f, scale: %f", cell_size_m, scale);
+
+
+
+  // if (abs(scale-1) > 0.001){
+  // ROS_INFO("Scaling height map: %f", scale);
+  cv::resize(height_map, height_map,cv::Size(), scale, scale, CV_INTER_CUBIC);
+  // }
+  cell_size_m_ = cell_size_m;
+
+  //if (compute_model)
+  model = createModel();
+
+  //  normed = height_map/cell_size_m_;
+
+  //  if (apply_smoothing){
+  //    cv::GaussianBlur(normed, normed, cv::Size(3,3),1,1);
+  //    //    ROS_INFO("With Smoothing");
+  //  }
+
+  policy_computed = false;
+
+
+  enemy_cost = cv::Mat(height_map.size(),CV_32FC1);
+  enemy_cost.setTo(0);
+}
 
 
 
@@ -509,27 +587,30 @@ void Path_planner::getRangeOfMotion(const cv::Mat& distanceMap, float threshold,
 void Path_planner::computePolicy(cv::Point goal){
 
 
+  printParameters();
+
   // update only here (otherwise this value could be changed between policy computation and path extraction)
   use_four_neighbours = use_four_neighbours_stored;
   scale = scale_stored;
 
 
-  goal.x *= scale;
-  goal.y *= scale;
+  goal_.x = floor(goal.x*scale);
+  goal_.y = floor(goal.y*scale);
 
-  // ROS_INFO("computePolicy: %i %i", goal_.x, goal_.y);
 
-  //  double min_, max_;
-  //  cv::minMaxLoc(enemy_cost, &min_,&max_);
-  //  ROS_INFO("enemy: %f %f", min_, max_);
+  double min_, max_;
+  cv::minMaxLoc(height_map, &min_,&max_);
+  ROS_INFO("height_map: %f %f", min_, max_);
 
-  goal_ = goal;
+  ROS_INFO("computePolicy: %i %i (was %i %i before scale)", goal_.x, goal_.y,goal.x, goal.y);
+
 
   // ros::Time start_time = ros::Time::now();
 
+  ROS_INFO("Height map: %i %i, goal: %i %i", height_map.rows,height_map.cols, goal_.x,goal_.y);
+
   assert(height_map.rows > 0 && height_map.cols > 0);
   assert(goal_.x < height_map.cols && goal_.y < height_map.rows);
-
 
   edge_costs.clear();
   edges.clear();
@@ -537,7 +618,11 @@ void Path_planner::computePolicy(cv::Point goal){
 
   // normalize so that points with the same height have a distance of 1 and heights
   // are measured in multiples of the cell size
-  normed = height_map/cell_size_m_*scale;
+  // normed = height_map/cell_size_m_*scale;
+
+
+
+  normed = height_map/cell_size_m_;
 
   if (apply_smoothing){
     cv::GaussianBlur(normed, normed, cv::Size(3,3),1,1);
@@ -552,7 +637,6 @@ void Path_planner::computePolicy(cv::Point goal){
 
   cv::Point current;
 
-  uint valid_transitions = 0;
 
 
   // // number of normal edges
@@ -565,6 +649,10 @@ void Path_planner::computePolicy(cv::Point goal){
 
   edges.reserve(num_nodes*(use_four_neighbours?4:8));
   edge_costs.reserve(num_nodes*(use_four_neighbours?4:8));
+
+  uint valid_transitions = 0;
+  uint invalid_transitions = 0;
+
 
   // Takes LONG time (200 ms)
   timing_start("neighbours");
@@ -587,12 +675,17 @@ void Path_planner::computePolicy(cv::Point goal){
 
           if (addEdges(current_id, cv::Point(x+dx,y+dy), current_height) == EDGE_NORMAL){
             valid_transitions++; valid_current++;
+          }else{
+            invalid_transitions++;
           }
         }
     }
 
   }
   timing_end("neighbours");
+
+  ROS_INFO("Edges added: %i (%i invalid)", valid_transitions,invalid_transitions);
+
 
   // ROS_INFO("Valids: %f")
   assert(edges.size() == edge_costs.size());
@@ -658,14 +751,13 @@ void Path_planner::computePolicy(cv::Point goal){
 
 }
 
-
-
-
 bool Path_planner::computePath(cv::Point start){
 
   start.x *= scale;
   start.y *= scale;
 
+
+  ROS_INFO("start: %i %i, policy: %i %i (scale: %f)", start.x,start.y,policy.cols,policy.rows, scale);
   assert(start.x >=0 && start.x < policy.cols);
 
   if (!policy_computed){
@@ -804,6 +896,13 @@ void testDijkstra(int x, int y){
 
 }
 
+Ant::Ant(){
+  pendulum = false;
+  state = ANT_NOT_INITIALIZED;
+  bank_account = 0;
+  stepFraction = 0;
+}
+
 
 void Ant::walk(float new_funding){
   assert(new_funding >=0);
@@ -834,7 +933,8 @@ void Ant::walk(float new_funding){
 
   // check if there is enough money to pay for this step
   if (cost > bank_account){
-    //  ROS_INFO("Next step would cost %f, but I only have %f", cost, bank_account);
+    stepFraction = bank_account/cost; // interpolate to next position
+    assert(stepFraction >=0 && stepFraction < 1);
     return;
   }
 
@@ -855,9 +955,11 @@ void Ant::walk(float new_funding){
 
       pos = 0;
       bank_account = 0;
+      stepFraction = 0;
 
     }else{
       state = ANT_AT_GOAL;
+      stepFraction = 0;
     }
 
     return;
@@ -868,6 +970,24 @@ void Ant::walk(float new_funding){
   walk(0);
 
 
+}
+
+
+cv::Point Ant::getPosition(){
+  if (state == ANT_AT_GOAL)
+    return path[path.size()-1];
+  else{
+    assert(pos < path.size());
+    return path[pos];
+  }
+}
+
+cv::Point Ant::getNextPosition(){
+  uint next = pos+1;
+  if (next < path.size())
+    return path[next];
+  else
+    return path[path.size()-1];
 }
 
 

@@ -8,7 +8,7 @@
 
 #include "rgbd_utils/type_definitions.h"
 #include "rgbd_utils/meshing.h"
-#include "rgbd_utils/ants.h"
+#include "rgbd_utils/path_planning.h"
 #include "rgbd_utils/pinch_detection.h"
 #include "rgbd_utils/projector_calibrator.h"
 

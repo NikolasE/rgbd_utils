@@ -77,7 +77,6 @@ struct Playing_Piece : public Tracked_Object {
 
   float dist_to(const Playing_Piece& other,Tracking_State* state = NULL){
 
-
     // compare areas: if too different, the detection is not used to update the track
     float max_area = std::max(area,other.area);
     float min_area = std::min(area,other.area);

@@ -58,6 +58,7 @@ GL_Mesh_Viewer::GL_Mesh_Viewer( QWidget* parent)
   : QGLWidget(parent)
 {
 
+
   frame_nr = 0;
 
   initializeGL();
@@ -73,6 +74,7 @@ GL_Mesh_Viewer::GL_Mesh_Viewer( QWidget* parent)
   // withDistortion(false); // render scene without distortion correction
 
   undo_distortion = false;
+  render_map_image = false;
 
   toggleWireframe(false); // render primitives with faces
 
@@ -183,13 +185,16 @@ void GL_Mesh_Viewer::drawHeightLines(){
 
 void GL_Mesh_Viewer::drawAnts(){
 
-  // ROS_INFO("Drawing %zu ants", ants.size());
+  //ROS_INFO("Drawing %zu ants", ants->size());
 
   if (!ants) return;
 
   for (std::map<int,Ant>::iterator it = ants->begin(); it != ants->end(); ++it){
-    drawAnt(&it->second);
     drawPath(&it->second);
+  }
+
+  for (std::map<int,Ant>::iterator it = ants->begin(); it != ants->end(); ++it){
+    drawAnt(&it->second);
   }
 
 }
@@ -201,101 +206,44 @@ void GL_Mesh_Viewer::drawAnts(){
 */
 void GL_Mesh_Viewer::drawAnt(Ant* ant){
 
-  // ROS_INFO("Drawing ant with id %i", ant->getId());
+//   ROS_INFO("Drawing ant with id %i", ant->getId());
+
+  if (ant->getState() == ANT_AT_GOAL){
+    return;
+  }
+
+
+   glClear(GL_DEPTH_BUFFER_BIT);
+
 
   if (ant->getState() == ANT_NOT_INITIALIZED){
     ROS_WARN("Can't show uninitialized ant");
     return;
   }
 
-
-  //  // get 3d Position
-  //  Cloud cloud;
-  //  pcl::fromROSMsg(mesh.cloud, cloud);
-
   cv::Point pos = ant->getPosition();
+  cv::Point next_pos = ant->getNextPosition();
+
+  pcl_Point P = cloud.at(pos.x, pos.y);
+  pcl_Point P_next = cloud.at(next_pos.x, next_pos.y);// next position on path
+
+  float frac = ant->getStepFraction();
+
+  // ROS_INFO("pos: %i, frac: %f", ant->getPosInPath(),frac);
+  pcl_Point inter = interpolate(P,P_next,frac);
 
 
-  glLineWidth(10);
+  GLUquadricObj * quadric = gluNewQuadric();
+  gluQuadricDrawStyle(quadric, GLU_FILL);
 
-  // glPointSize(100);
-
-  int cnt = 4;
-
-  glBegin(GL_LINE_STRIP);
-
-  for (int foo = -cnt; foo <= cnt; ++foo){
-
-    int x = foo+pos.x;
-
-    if (x<0 || x >= int(cloud.width)) continue;
-
-    pcl_Point P = cloud.at(x, pos.y);
-
-    if (foo == 0)
-      glColor3f(0,1,0);
-    else
-      glColor3f(1,0,0);
-
-    glVertex3f( P.x,P.y,P.z);
-  }
-
-  glEnd();
-
-  glBegin(GL_LINE_STRIP);
-
-  for (int foo = -cnt; foo <= cnt; ++foo){
-
-    int y = foo+pos.y;
-
-    if (y<0 || y >= int(cloud.height)) continue;
-
-    pcl_Point P = cloud.at(pos.x, y);
-
-    if (foo == 0)
-      glColor3f(0,1,0);
-    else
-      glColor3f(1,0,0);
-
-    glVertex3f( P.x,P.y,P.z);
-  }
-
-  glEnd();
+  glMatrixMode( GL_MODELVIEW );
+  glPushMatrix();
+  glTranslatef(inter.x,inter.y,inter.z);
+  glColor3f(1,0,0);
+  gluSphere(quadric,0.02,30,30); // sphere with 3cm radius
+  glPopMatrix();
 
 
-
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x+l,P3.y+l,P3.z+dz);
-  //
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x,P3.y,P3.z+dz);
-  //
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x-l,P3.y-l,P3.z+dz);
-  //
-  // glEnd();
-  //
-  // glBegin(GL_LINE_STRIP);
-  //
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x+l,P3.y-l,P3.z+dz);
-  //
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x,P3.y,P3.z+dz);
-  //
-  // glColor3f(1,0,0);
-  // glVertex3f( P3.x-l,P3.y+l,P3.z+dz);
-  //
-  // glEnd();
-
-
-
-  //  GLUquadricObj* Sphere = gluNewQuadric();
-  //
-  //  gluSphere(Sphere,0.02,20,20);
-  //  gluDeleteQuadric(Sphere);
-  //
-  //  glPopMatrix();
 
 
 }
@@ -308,10 +256,9 @@ void GL_Mesh_Viewer::drawAnt(Ant* ant){
 */
 void GL_Mesh_Viewer::drawPath(Ant* ant){
 
-  // ROS_INFO("draw path for ant %i", ant->getId());
-
-  //  Cloud cloud;
-  //  pcl::fromROSMsg(mesh.cloud, cloud);
+  if (ant->getState() == ANT_AT_GOAL){
+    return;
+  }
 
   assert(cloud.width > 1 && cloud.height > 1);
 
@@ -1168,9 +1115,7 @@ void GL_Mesh_Viewer::renderTracks(){
 
   // ROS_INFO("Drawing sphere");
 
-  GLUquadricObj *quadric;
-  quadric = gluNewQuadric();
-
+  GLUquadricObj *quadric = gluNewQuadric();
   gluQuadricDrawStyle(quadric, GLU_FILL );
 
   glClear(GL_DEPTH_BUFFER_BIT);
@@ -1309,7 +1254,8 @@ void GL_Mesh_Viewer:: drawScene(){
   // drawing path of ant as GlLine
   // drawPath();
 
-  // drawAnts();
+  //ROS_INFO("drawing ants");
+   drawAnts();
 
   // if (path.size() > 0)
   //  drawPath();

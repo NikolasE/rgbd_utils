@@ -1,7 +1,7 @@
 using namespace std;
 #include <iostream>
 
-#include "rgbd_utils/ants.h"
+#include "rgbd_utils/path_planning.h"
 #include "rgbd_utils/path_paramsConfig.h"
 #include <dynamic_reconfigure/server.h>
 
@@ -47,9 +47,9 @@ void doPlanning(){
   int w = h2.cols;
   int h = h2.rows;
 
-  planner.removeEnemies();
-  planner.addEnemy(10,20,w-10,h/2);
-  planner.addEnemy(10,20,15,h/2+5);
+//  planner.removeEnemies();
+//  planner.addEnemy(10,20,w-10,h/2);
+//  planner.addEnemy(10,20,15,h/2+5);
 
 
   //      planner.addEnemy(10,10,w/2+30,h/2);
@@ -87,7 +87,8 @@ void doPlanning(){
   vector<cv::Point> contour;
   planner.getRangeOfMotion(dist_map,dist_threshold,contour);
 
-  planner.createRangeMarker(marker_range, contour);
+
+  // planner.createRangeMarker(marker_range, contour);
 
 
   normalize(dist_map);
@@ -186,7 +187,7 @@ int main(int argc, char ** argv){
     height.convertTo(h2,CV_32FC1,1/255.0);
   }
 
-  planner.setScale(0.5);
+ // planner.setScale(0.5);
 
   //
 
@@ -238,12 +239,12 @@ int main(int argc, char ** argv){
     msg->header.stamp = ros::Time::now ();
 
 
-    if (planner.enemy_factor>0){
-      for (uint i=0; i<planner.enemies.size(); ++i){
-        planner.createEnemyMarker(marker_enemies,i);
-        pub_marker_enemy.publish(marker_enemies);
-      }
-    }
+//    if (planner.enemy_factor>0){
+//      for (uint i=0; i<planner.enemies.size(); ++i){
+//        planner.createEnemyMarker(marker_enemies,i);
+//        pub_marker_enemy.publish(marker_enemies);
+//      }
+//    }
 
     pub_model.publish(msg);
     pub_marker_range.publish(marker_range);

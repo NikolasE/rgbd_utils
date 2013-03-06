@@ -123,6 +123,17 @@ void div(pcl_Point& a, float d){
 
 
 /**
+*
+* @param a will be a*d
+* @param d
+*/
+/// a*=d
+void mult(pcl_Point& a, float d){
+  a.x *= d; a.y *= d; a.z *= d;
+}
+
+
+/**
 * @param p input point
 * @return norm of p
 */
@@ -140,6 +151,23 @@ float norm(const pcl_Point& p){
 float dist_sq(const pcl_Point& a,const pcl_Point& b){
   return (a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y)+(a.z-b.z)*(a.z-b.z);
 }
+
+
+/**
+  * res =(1-alpha)*p1+alpha*p2
+  */
+/// linear interpolation with alpha in [0,1]
+pcl_Point interpolate(const pcl_Point& p1, const pcl_Point& p2, float alpha){
+  assert(alpha>=0 && alpha<=1);
+  pcl_Point res;
+  res.x = alpha*p2.x+(1-alpha)*p1.x;
+  res.y = alpha*p2.y+(1-alpha)*p1.y;
+  res.z = alpha*p2.z+(1-alpha)*p1.z;
+
+  return res;
+
+}
+
 
 /**
 *
