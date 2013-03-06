@@ -147,8 +147,6 @@ void GL_Mesh_Viewer::LoadGLTextures() {
 
 }
 
-
-
 /// draw height lines as red GL_LINES
 /**
 *  @todo: color should depend on height
@@ -376,7 +374,6 @@ void GL_Mesh_Viewer::storeExpMapInfo(const std::vector<cv::Vec3i>& triangles, co
 void GL_Mesh_Viewer::removeExpMapInfo(){ this->triangles.clear();}
 
 
-
 void GL_Mesh_Viewer::showExpMapTexture(){
 
   if (triangles.empty())
@@ -531,8 +528,6 @@ void GL_Mesh_Viewer::toggleWireframe(bool do_wireframe){
   }
 
 }
-
-
 
 
 /**
@@ -943,14 +938,11 @@ bool GL_Mesh_Viewer::setUpProjectorImage(){
 }
 
 
-
 void GL_Mesh_Viewer::drawSceneDisortion(){
 
-  ROS_INFO("drawing WITH distortion correction");
+  // ROS_INFO("drawing WITH distortion correction");
 
   glEnable(GL_TEXTURE_2D);
-
-  // render into framebuffer:
 
   if (!fbo->isValid()){
     fbo = new QGLFramebufferObject(w_,h_);
@@ -1195,6 +1187,8 @@ void GL_Mesh_Viewer::renderTracks(){
     cv::Scalar color =  getColor(it->first);
 
     glColor3f(color.val[0]/255.0,color.val[1]/255.0,color.val[2]/255.0);
+
+    ROS_INFO("Object %i has size %f",it->first,it->second.last_detection()->area);
 
     // ROS_INFO("pos in world: %f %f %f", center.x,center.y,center.z);
 

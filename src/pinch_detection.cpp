@@ -281,62 +281,7 @@ void Detector::showDetectionAreaEdge(cv::Mat& img){
   red.copyTo(img,detection_area_edge);
 }
 
-/*
-void Detector::getFingerTips_2(cv::Mat* rgb){
 
-
-  cv::Mat diff = last_static_norm-norm_;
-
-  cv::Mat dist_thres;
-
-  // remove everything below 2cm
-  cv::threshold(diff,dist_thres,fingertip_max_dist,-1,CV_THRESH_TOZERO_INV);
-  cv::threshold(dist_thres,dist_thres,0,1,CV_THRESH_BINARY);
-
-  cv::namedWindow("2");
-
-
-  dummy.setTo(0);
-  for (uint i=0; i<contours.size(); ++i){
-    if (intersects[i])
-      cv::drawContours(dummy, contours,i, CV_RGB(255,255,255),-1);
-  }
-
-  cv::erode(dummy,dummy,cv::Mat(), cv::Point(-1,-1),1);
-
-  cv::Mat fg = cv::Mat(480,640,CV_8UC1);
-  fg.setTo(0);
-  dist_thres.copyTo(fg, dummy);
-
-  cv::imshow("2",fg);
-
-  cv::namedWindow("hand");
-  cv::imshow("hand",dummy);
-
-
-  std::vector<std::vector<cv::Point> > contours_finger;
-  std::vector<cv::Vec4i> hierarchy_finger;
-
-  cv::Mat cpy;
-  fg.convertTo(cpy, CV_8UC1);
-  cv::findContours(cpy, contours_finger, hierarchy_finger, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
-
-
-  int N = int(contours_finger.size());
-  for (int i=0; i<N; ++i){
-
-
-    cv::Moments mom = cv::moments(contours_finger[i]);
-
-    if (rgb){
-      cv::Point2f px = cv::Point2f(mom.m10/mom.m00,mom.m01/mom.m00);
-      cv::circle(*rgb,px,5,CV_RGB(0,255,0),1);
-    }
-  }
-
-
-}
-*/
 
 void Detector::getFingerTips(cv::Mat* rgb){
 

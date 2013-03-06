@@ -77,6 +77,20 @@ struct Playing_Piece : public Tracked_Object {
 
   float dist_to(const Playing_Piece& other,Tracking_State* state = NULL){
 
+
+    // compare areas: if too different, the detection is not used to update the track
+    float max_area = std::max(area,other.area);
+    float min_area = std::min(area,other.area);
+
+    // ROS_INFO("min,max: %f %f", min_area,max_area);
+
+    if (max_area > 1.5*min_area){
+      //ROS_INFO("Large difference! %f %f", min_area,max_area);
+      return -1;
+    }
+
+
+
     double dist = norm(sub(position_world,other.position_world));
 
     if (state && *state != Track_Active && dist > 0.05)
@@ -88,7 +102,6 @@ struct Playing_Piece : public Tracked_Object {
   float area;
 
   std::vector<cv::Point> contour;
-
   //      // copy image of detection:
   //      cv::Mat foo = cv::Mat::zeros( foreground.size(), CV_8UC3 );
   //      cv::drawContours(foo,contours,largest_hole_id,CV_RGB(255,255,255),-1);
@@ -105,6 +118,7 @@ struct Grasp : public Tracked_Object {
   Grasp(){}
 
   float dist_to(const Grasp& other,Tracking_State* state = NULL){
+
     float d = norm(sub(position_world,other.position_world));
     if (d>max_dist) return -1;
     return d;

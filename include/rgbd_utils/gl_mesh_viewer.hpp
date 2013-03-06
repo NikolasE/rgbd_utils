@@ -99,7 +99,7 @@ public:
 
   void LoadGLTextures();
 
-  void withDistortion(bool correct_distortion);
+  void toggleDistortion(bool correct_distortion);
 
 
   void setProjectorCalibration(Calibration& proj_calib);
